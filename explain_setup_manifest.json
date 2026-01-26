@@ -1,0 +1,8 @@
+{
+  "created_at": "2025-10-21 19:46:25",
+  "base_path": "C:\\Users\\Admin\\Downloads\\temp downloads\\try cybersec\\demo",
+  "rf_model_file": "C:\\Users\\Admin\\Downloads\\temp downloads\\try cybersec\\demo\\rf_hybrid_minilm.pkl",
+  "scaler_file": "C:\\Users\\Admin\\Downloads\\temp downloads\\try cybersec\\demo\\scaler_hybrid.pkl",
+  "shap_explainer_file": null,
+  "sbert_model": "all-MiniLM-L6-v2"
+}

@@ -1,0 +1,18 @@
+timestamp,url,ml_prob,rule_score,trust_index,risk_level,triggered_rules,explain_type
+2025-10-22 01:51:34,https://www.youtube.com,0.5004,0.0,0.6503,Safe,,fallback
+2025-10-22 01:51:47,https://paypal-login.tk,0.5848,0.4,0.5894,Safe,Suspicious_TLD;Keyword_match,fallback
+2025-10-22 01:54:53,micros0ft.com,0.4932,0.2,0.5852,Safe,Shortener,fallback
+2025-10-22 01:55:07,http://paypal.com@suspicious-domain.net,0.5264,0.2,0.6085,Safe,@_symbol,fallback
+2025-10-22 01:55:22,http://federmacedoadv.com.br/3f/aze/ab51e2e,0.7085,0.0,0.796,Safe,,fallback
+2025-10-22 01:57:46,paypa1.com,0.56,0.0,0.692,Safe,,fallback
+2025-10-22 10:59:12,www.youtube.com,0.4014,0.0,0.581,Suspicious,,fallback
+2025-10-22 10:59:34,www.google.com,0.2858,0.0,0.5001,Suspicious,,fallback
+2025-10-22 10:59:46,www.cbit.ac.in,0.4128,0.0,0.589,Suspicious,,fallback
+2025-10-22 11:00:05,www.paypa1.com,0.5452,0.0,0.6817,Safe,,fallback
+2025-10-22 11:00:23,www.chat.com,0.4513,0.2,0.5559,Suspicious,Shortener,fallback
+2025-10-22 11:00:38,www.chat.com,0.4513,0.2,0.5559,Suspicious,Shortener,fallback
+2025-10-22 11:04:50,https://etherscan.io/,0.4699,0.0,0.6289,Safe,,fallback
+2025-10-22 11:05:14,https://fitgirl-repacks.site/,0.441,0.0,0.6087,Safe,,fallback
+2025-10-22 11:05:51,https://metamask.io/,0.5057,0.0,0.654,Safe,,fallback
+2025-10-22 11:06:50,https://watchmovierulz.chat/,0.4116,0.0,0.5881,Suspicious,,fallback
+2025-10-22 11:09:37,mail.google.com,0.482,0.0,0.6374,Safe,,fallback

@@ -1,0 +1,13 @@
+url,ml_prob,rule_score,trust_index,risk_level,triggered_rules
+https://google.com,0.32134104810561437,0.0,0.5249387336739301,Suspicious,
+https://www.paypal.com,0.5252160579507065,0.0,0.6676512405654945,Safe,
+http://update-account-verification.com/login,0.5823201951136532,0.2,0.6476241365795572,Safe,Keyword_match
+https://tinyurl.com/free-gift,0.4440419043062204,0.2,0.5508293330143543,Safe,Shortener
+https://secure.bankofamerica.com-login-update.com,0.6244074547134147,0.2,0.6770852182993903,Safe,Keyword_match
+https://github.com,0.44936715610280475,0.0,0.6145570092719632,Safe,
+http://bit.ly/verify-bank,0.4810847221350236,0.4,0.5167593054945165,Suspicious,"Keyword_match, Shortener"
+https://accounts.google.com/signin,0.5517618968341454,0.2,0.6262333277839018,Safe,Keyword_match
+https://my-amazon-support.cf,0.46677341741770667,0.2,0.5667413921923947,Safe,Suspicious_TLD
+http://xyz-bank.tk/login,0.6785276590814455,0.4,0.6549693613570118,Safe,"Suspicious_TLD, Keyword_match"
+https://openai.com,0.42901824112856374,0.0,0.6003127687899945,Safe,
+https://netflix.com,0.41428561906996125,0.0,0.5899999333489728,Safe,

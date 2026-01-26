@@ -1,0 +1,17 @@
+streamlit
+pandas
+numpy
+sentence-transformers
+tldextract
+scikit-learn
+joblib
+os
+re
+tldextract
+shap
+time
+datetime
+warnings
+matplotlib
+sentence_transformers
+urllib
