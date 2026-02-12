@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import joblib, os, re, tldextract, shap, time, datetime, warnings
 import matplotlib.pyplot as plt
+import torch
 from sentence_transformers import SentenceTransformer
 from urllib.parse import urlparse
 
@@ -18,6 +19,27 @@ base_path = os.path.dirname(__file__)
 
 rf_model = joblib.load(os.path.join(base_path, "rf_hybrid_minilm.pkl"))
 scaler   = joblib.load(os.path.join(base_path, "scaler_hybrid.pkl"))
+# Workaround: some HuggingFace/transformers loading paths use "meta" tensors
+# which cannot be copied with Module.to(). Prefer Module.to_empty() when
+# moving modules off the meta device. Patch torch.nn.Module.to to route to
+# to_empty() when any parameter lives on the 'meta' device and the target
+# move would place it on a real device. This avoids the NotImplementedError
+_orig_module_to = torch.nn.Module.to
+def _safe_module_to(self, *args, **kwargs):
+    try:
+        has_meta = any(str(getattr(p, 'device', '')) == 'meta' for p in self.parameters(recurse=True))
+        # determine target device if provided
+        target = kwargs.get('device', args[0] if args else None)
+        target_is_meta = (str(target) == 'meta')
+        if has_meta and not target_is_meta and hasattr(self, 'to_empty'):
+            return self.to_empty(*args, **kwargs)
+    except Exception:
+        pass
+    return _orig_module_to(self, *args, **kwargs)
+
+torch.nn.Module.to = _safe_module_to
+
+# Now load the sentence-transformer model
 minilm_model = SentenceTransformer("all-MiniLM-L6-v2")
 
 # ==========================================================
@@ -79,7 +101,33 @@ def explain_url_shap(X_hybrid):
     try:
         explainer = shap.TreeExplainer(rf_model, feature_perturbation="tree_path_dependent")
         shap_values = explainer.shap_values(X_hybrid)
-        vals = shap_values[1][0]
+        vals = None
+        # Robust handling: shap_values may be a list (one per class) or a single
+        # ndarray with shape (n_samples, n_features). Handle common cases.
+        if isinstance(shap_values, (list, tuple)):
+            arr = shap_values[1] if len(shap_values) > 1 else shap_values[0]
+        else:
+            arr = shap_values
+
+        # Now normalize arr to a 1D feature vector for the first sample
+        if hasattr(arr, 'ndim'):
+            if arr.ndim == 3:
+                # (classes, n_samples, n_features)
+                if arr.shape[0] > 1:
+                    vals = arr[1][0]
+                else:
+                    vals = arr[0][0]
+            elif arr.ndim == 2:
+                # (n_samples, n_features)
+                vals = arr[0]
+            elif arr.ndim == 1:
+                vals = arr
+        else:
+            vals = np.array(arr).flatten()
+
+        if vals is None:
+            raise ValueError(f"Unhandled shap_values structure: {type(shap_values)}")
+
         abs_vals = np.abs(vals)
         top_idx = np.argsort(abs_vals)[-10:][::-1]
         top_vals = vals[top_idx]
