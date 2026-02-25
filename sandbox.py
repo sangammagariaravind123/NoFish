@@ -102,29 +102,17 @@ def analyze_url(url):
     return result
 
 if __name__ == "__main__":
-    r = analyze_url("https://www.instagram.com")
+    with open("urls.txt") as f:
+        urls = [u.strip() for u in f if u.strip()]
 
-    output_file = "results.json"
+    results = []
 
-    # If file exists, load existing data; otherwise start with empty list
-    if os.path.exists(output_file):
-        with open(output_file, "r", encoding="utf-8") as f:
-            try:
-                data = json.load(f)
-            except json.JSONDecodeError:
-                data = []
-    else:
-        data = []
+    for u in urls:
+        print(f"Scanning: {u}")
+        r = analyze_url(u)
+        results.append(r)
 
-    # Ensure the file contains a list
-    if not isinstance(data, list):
-        data = [data]
+    with open("results.json", "w") as f:
+        json.dump(results, f, indent=2)
 
-    # Append new result
-    data.append(r)
-
-    # Write back to file
-    with open(output_file, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4)
-
-    print("Result appended to results.json")
+    print("Done. Saved to results.json")
