@@ -1,6 +1,6 @@
 from playwright.sync_api import sync_playwright
 from urllib.parse import urlparse
-import re
+import os, re ,json
 
 SUSPICIOUS_TLDS = [".xyz", ".top", ".tk", ".ml", ".ga", ".cf", ".gq"]
 
@@ -30,15 +30,28 @@ def analyze_url(url):
     with sync_playwright() as p:
 
         browser = p.chromium.launch(headless=True)
+
         context = browser.new_context(
             accept_downloads=False,
             permissions=[]
         )
+
         page = context.new_page()
         page.set_default_timeout(10000)
 
-        base_domain = get_domain(url)
+        # DOWNLOAD LOGGING 
+        result["download_attempts"] = []
 
+        def handle_download(download):
+            result["download_attempts"].append({
+                "url": download.url,
+                "suggested_filename": download.suggested_filename
+            })
+            download.cancel()
+
+        page.on("download", handle_download)
+
+        base_domain = get_domain(url)
         # track redirects
         def handle_response(response):
             if response.request.redirected_from:
@@ -88,7 +101,30 @@ def analyze_url(url):
 
     return result
 
-
 if __name__ == "__main__":
-    r = analyze_url("https://facebook.com")
-    print(r)
+    r = analyze_url("https://www.instagram.com")
+
+    output_file = "results.json"
+
+    # If file exists, load existing data; otherwise start with empty list
+    if os.path.exists(output_file):
+        with open(output_file, "r", encoding="utf-8") as f:
+            try:
+                data = json.load(f)
+            except json.JSONDecodeError:
+                data = []
+    else:
+        data = []
+
+    # Ensure the file contains a list
+    if not isinstance(data, list):
+        data = [data]
+
+    # Append new result
+    data.append(r)
+
+    # Write back to file
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
+
+    print("Result appended to results.json")
