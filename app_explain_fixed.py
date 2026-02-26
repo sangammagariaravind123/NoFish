@@ -40,7 +40,7 @@ def _safe_module_to(self, *args, **kwargs):
 torch.nn.Module.to = _safe_module_to
 
 # Now load the sentence-transformer model
-minilm_model = SentenceTransformer("all-MiniLM-L6-v2")
+minilm_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
 # ==========================================================
 # === Cybersecurity Rule Engine ============================

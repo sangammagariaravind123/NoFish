@@ -18,13 +18,13 @@ def analyze_url(url):
     result = {
         "url": url,
         "final_url": None,
-        "total_requests": 0,
-        "external_domains": set(),
-        "ip_based_requests": 0,
-        "suspicious_tld_count": 0,
-        "redirect_count": 0,
-        "js_requests": 0,
-        "all_requests": []
+        "total_requests": 0, #no. of HTML, JS, CSS, img, font, API requests
+        "external_domains": set(), # of external domain contacted
+        "ip_based_requests": 0, # of requests made directly to an IP address.
+        "suspicious_tld_count": 0, # domains with suspicious endings. - xyz, top, tk, ml, ga, cf, gq
+        "redirect_count": 0, # of times the page redirected before landing on final URL
+        "js_requests": 0, # of javascript files loaded
+        "all_requests": [] # A full list of every request URL.
     }
 
     with sync_playwright() as p:
@@ -105,14 +105,14 @@ if __name__ == "__main__":
     with open("urls.txt") as f:
         urls = [u.strip() for u in f if u.strip()]
 
-    results = []
+    output = []
 
     for u in urls:
         print(f"Scanning: {u}")
         r = analyze_url(u)
-        results.append(r)
+        output.append(r)
 
     with open("results.json", "w") as f:
-        json.dump(results, f, indent=2)
+        json.dump(output, f, indent=2)
 
     print("Done. Saved to results.json")
