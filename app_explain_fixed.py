@@ -165,7 +165,7 @@ def explain_fallback():
 # ==========================================================
 st.set_page_config(page_title="PhishTriage – Explainable Detector (Fixed)", page_icon="🧠", layout="centered")
 st.title("🧠 PhishTriage – Explainable Phishing URL Detector")
-st.markdown("This version uses SHAP safely, bypassing TensorFlow/Keras conflicts.")
+st.markdown("v4.0 – Now with SHAP explainability! Enter a URL to see the prediction and which features influenced it the most.")
 
 url_input = st.text_input("🔗 Enter URL:", placeholder="https://example.com")
 analyze_btn = st.button("Analyze & Explain")
