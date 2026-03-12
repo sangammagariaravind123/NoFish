@@ -163,8 +163,8 @@ def explain_fallback():
 # ==========================================================
 # === Streamlit UI =========================================
 # ==========================================================
-st.set_page_config(page_title="PhishTriage – Explainable Detector (Fixed)", page_icon="🧠", layout="centered")
-st.title("🧠 PhishTriage – Explainable Phishing URL Detector")
+st.set_page_config(page_title="NoPhish – Explainable Detector (Fixed)", page_icon="🧠", layout="centered")
+st.title("🧠 NoPhish – Explainable Phishing URL Detector")
 st.markdown("v4.0 – Now with SHAP explainability! Enter a URL to see the prediction and which features influenced it the most.")
 
 url_input = st.text_input("🔗 Enter URL:", placeholder="https://example.com")
