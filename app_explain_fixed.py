@@ -164,22 +164,22 @@ def explain_url_shap(X_hybrid):
             arr = shap_values[1] if len(shap_values) > 1 else shap_values[0]
         else:
             arr = shap_values
-
+        vals = shap_values[0, :, 1]
         # Now normalize arr to a 1D feature vector for the first sample
-        if hasattr(arr, "ndim"):
-            if arr.ndim == 3:
-                # (classes, n_samples, n_features)
-                if arr.shape[0] > 1:
-                    vals = arr[1][0]
-                else:
-                    vals = arr[0][0]
-            elif arr.ndim == 2:
-                # (n_samples, n_features)
-                vals = arr[0]
-            elif arr.ndim == 1:
-                vals = arr
-        else:
-            vals = np.array(arr).flatten()
+        # if hasattr(arr, "ndim"):
+        #     if arr.ndim == 3:
+        #         # (classes, n_samples, n_features)
+        #         if arr.shape[0] > 1:
+        #             vals = arr[1][0]
+        #         else:
+        #             vals = arr[0][0]
+        #     elif arr.ndim == 2:
+        #         # (n_samples, n_features)
+        #         vals = arr[0]
+        #     elif arr.ndim == 1:
+        #         vals = arr
+        # else:
+        #     vals = np.array(arr).flatten()
 
         if vals is None:
             raise ValueError(f"Unhandled shap_values structure: {type(shap_values)}")
