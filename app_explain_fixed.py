@@ -251,5 +251,6 @@ if analyze_btn and url_input.strip():
         st.write("SHAP shape:", np.array(shap_values).shape)
         st.write("Length of SHAP vector:", len(vals))
         st.write("Non-zero SHAP features:", np.count_nonzero(vals))
+        print(shap_values, vals)
 else:
     st.info("Enter a URL and click **Analyze & Explain** to begin.")
