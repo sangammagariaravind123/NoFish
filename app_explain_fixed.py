@@ -97,6 +97,9 @@ def compute_rule_score(url):
     if "@" in url:
         score += 1
         rules.append("@_symbol")
+    if "http:" in url:
+        score += 1
+        rules.append("no_https")
     if url.count(".") > 4:
         score += 1
         rules.append("Excess_subdomains")
@@ -135,15 +138,17 @@ def predict_url_simple(url):
     X_hybrid = np.hstack([emb, num_scaled])
     prob = rf_model.predict_proba(X_hybrid)[0][1]
     rule_score, rules = compute_rule_score(url)
-    trust_index = 0.7 * prob + 0.3 * (1 - rule_score)
+    prob_coef = 0.4
+    rule_coef = 0.6
+    trust_index = prob_coef * prob + rule_coef * (1 - rule_score)
     trust_index = max(0.0, min(1.0, trust_index))
-    if trust_index >= 0.55:
+    if trust_index >= 0.65:
         risk = "Safe"
     elif trust_index >= 0.35:
         risk = "Suspicious"
     else:
         risk = "Phishing"
-    return prob, rule_score, trust_index, risk, rules, X_hybrid
+    return prob, rule_score, trust_index, risk, rules, X_hybrid, rule_coef, prob_coef
 
 
 # ==========================================================
@@ -215,7 +220,7 @@ st.set_page_config(
 )
 st.title("🧠 NoPhish – Explainable Phishing URL Detector")
 st.markdown(
-    "v4.0 – Now with SHAP explainability! Enter a URL to see the prediction and which features influenced it the most."
+    "v5.1 – Now with SHAP explainability! Enter a URL to see the prediction and which features influenced it the most."
 )
 
 url_input = st.text_input("🔗 Enter URL:", placeholder="https://example.com")
@@ -223,8 +228,8 @@ analyze_btn = st.button("Analyze & Explain")
 
 if analyze_btn and url_input.strip():
     with st.spinner("Running model & SHAP analysis..."):
-        prob, rule_score, trust_index, risk, rules, X_hybrid = predict_url_simple(
-            url_input
+        prob, rule_score, trust_index, risk, rules, X_hybrid, rule_coef, prob_coef = (
+            predict_url_simple(url_input)
         )
         print(prob, " + ", rule_score, " = ", trust_index)
         time.sleep(1.0)
@@ -251,6 +256,14 @@ if analyze_btn and url_input.strip():
         st.write("SHAP shape:", np.array(shap_values).shape)
         st.write("Length of SHAP vector:", len(vals))
         st.write("Non-zero SHAP features:", np.count_nonzero(vals))
-        print(shap_values, vals)
+        st.write(
+            f"{prob_coef} x {prob:.2f} + {rule_coef} x {rule_score:.2f} = {trust_index:.2f}"
+        )
+        st.write("prob", " + ", "rule_score", " = ", "trust_index")
+        st.write(rules)
+        print(shap_values)
+        print(vals)
+        print(prob)
+        print(rule_score)
 else:
     st.info("Enter a URL and click **Analyze & Explain** to begin.")
