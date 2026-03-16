@@ -226,7 +226,7 @@ if analyze_btn and url_input.strip():
         prob, rule_score, trust_index, risk, rules, X_hybrid = predict_url_simple(
             url_input
         )
-
+        print(prob, " + ", rule_score, " = ", trust_index)
         time.sleep(1.0)
 
     color = {"Safe": "green", "Suspicious": "orange", "Phishing": "red"}[risk]
