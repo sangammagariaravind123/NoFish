@@ -16,3 +16,4 @@ timestamp,url,ml_prob,rule_score,trust_index,risk_level,triggered_rules,explain_
 2025-10-22 11:05:51,https://metamask.io/,0.5057,0.0,0.654,Safe,,fallback
 2025-10-22 11:06:50,https://watchmovierulz.chat/,0.4116,0.0,0.5881,Suspicious,,fallback
 2025-10-22 11:09:37,mail.google.com,0.482,0.0,0.6374,Safe,,fallback
+2026-03-28 23:42:38,https://paypal‑login.tk,0.5747,0.4,0.5823,Suspicious,Suspicious_TLD;Keyword_match,fallback
