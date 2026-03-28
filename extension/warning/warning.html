@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Phishing Warning</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      text-align: center;
+      margin-top: 80px;
+      background-color: #f8f9fa;
+      color: #333;
+    }
+    .danger {
+      color: #dc3545;
+      font-size: 4rem;
+      margin-bottom: 20px;
+    }
+    h1 {
+      color: #dc3545;
+    }
+    .box {
+      background: white;
+      border-radius: 10px;
+      padding: 30px;
+      max-width: 500px;
+      margin: 0 auto;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .trust {
+      font-size: 1.2rem;
+      margin: 20px 0;
+    }
+    button {
+      padding: 12px 24px;
+      margin: 10px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    #back {
+      background-color: #6c757d;
+      color: white;
+    }
+    #proceed {
+      background-color: #28a745;
+      color: white;
+    }
+    #proceed:hover {
+      background-color: #218838;
+    }
+    #back:hover {
+      background-color: #5a6268;
+    }
+    .reason {
+      background-color: #f8d7da;
+      border-left: 4px solid #dc3545;
+      padding: 10px;
+      margin: 20px 0;
+      text-align: left;
+    }
+  </style>
+</head>
+<body>
+<div class="box">
+  <div class="danger">⚠️</div>
+  <h1>This site may be phishing!</h1>
+  <div class="trust">
+    <strong>Trust Index:</strong> <span id="trust"></span><br>
+    <strong>Risk:</strong> Phishing
+  </div>
+  <div class="reason" id="reason"></div>
+  <button id="back">Go Back</button>
+  <button id="proceed">Proceed Anyway</button>
+</div>
+<script>
+  const urlParams = new URLSearchParams(window.location.search);
+  const originalUrl = urlParams.get('url');
+  const trust = urlParams.get('trust');
+  const reason = urlParams.get('reason');
+
+  document.getElementById('trust').innerText = trust;
+  if (reason) {
+    document.getElementById('reason').innerHTML = `<strong>Why:</strong> ${reason}`;
+  } else {
+    document.getElementById('reason').style.display = 'none';
+  }
+
+  document.getElementById('back').onclick = () => history.back();
+  document.getElementById('proceed').onclick = () => window.location.href = originalUrl;
+</script>
+</body>
+</html>
