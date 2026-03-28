@@ -113,16 +113,23 @@ def explain_fallback():
 # === Logging ==============================================
 # ==========================================================
 log_path = os.path.join(base_path, "explainability_logs.csv")
+
 def log_result(url, prob, rule_score, trust_index, risk, rules, explain_type):
     write_header = not os.path.exists(log_path)
-    with open(log_path, "a", newline="") as f:
+    # Open with UTF‑8 encoding
+    with open(log_path, "a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         if write_header:
             writer.writerow(["timestamp","url","ml_prob","rule_score","trust_index","risk_level","triggered_rules","explain_type"])
         writer.writerow([
             datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            url, round(prob,4), round(rule_score,4), round(trust_index,4),
-            risk, ";".join(rules), explain_type
+            url,
+            round(prob,4),
+            round(rule_score,4),
+            round(trust_index,4),
+            risk,
+            ";".join(rules),
+            explain_type
         ])
 
 # ==========================================================
