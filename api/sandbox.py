@@ -102,9 +102,6 @@ def analyze_url(url):
     return result
 
 def get_behavioral_features(url):
-    """
-    Run sandbox analysis and return a dictionary with features ready for model input.
-    """
     result = analyze_url(url)
     return {
         "total_requests": result["total_requests"],

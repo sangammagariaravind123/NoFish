@@ -115,32 +115,33 @@ async def predict(request: URLRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
+
 @app.post("/deep_scan")
 async def deep_scan(request: URLRequest):
     try:
-        # 1. Run L1+L2 prediction (same as /predict)
+        # 1. L1+L2 prediction (sync, but light)
         l1l2_result = predict_url(request.url)
-        
-        # 2. Run sandbox to get behavioral features
+
+        # 2. Run sandbox in a thread to avoid blocking the event loop
         features = await asyncio.to_thread(get_behavioral_features, request.url)
-        
-        # 3. Convert features to DataFrame (the model expects a DataFrame)
+
+        # 3. Convert to DataFrame
         df = pd.DataFrame([features])
-        
-        # 4. Get behavioral probability (phishing)
-        behavioral_prob = behavioral_model.predict_proba(df)[0][1]  # probability of class 1 (phishing)
-        
-        # 5. Combine: if behavioral_prob > 0.6, final risk = Phishing, else use L1+L2
+
+        # 4. Get behavioral probability
+        behavioral_prob = behavioral_model.predict_proba(df)[0][1]
+
+        # 5. Final risk based on sandbox
         if behavioral_prob > 0.6:
             final_risk = "Phishing"
-            final_trust = min(1.0, l1l2_result["trust_index"] + 0.2)  # adjust
-            explanation = f"Sandbox analysis detected high risk (behavioral score: {behavioral_prob:.2f})."
+        elif behavioral_prob > 0.4:
+            final_risk = "Suspicious"
         else:
-            final_risk = l1l2_result["risk"]
-            final_trust = l1l2_result["trust_index"]
-            explanation = f"L1+L2 analysis: {final_risk}. Sandbox did not detect high risk."
-        
-        # 6. Return combined result
+            final_risk = "Safe"
+        final_trust = behavioral_prob
+
+        explanation = f"Sandbox analysis gave behavioral score {behavioral_prob:.2f}. Final risk determined by sandbox."
+
         return {
             "final_risk": final_risk,
             "final_trust_index": final_trust,
@@ -152,6 +153,9 @@ async def deep_scan(request: URLRequest):
             "explanation": explanation
         }
     except Exception as e:
+        # Print traceback to server console for debugging
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/")
