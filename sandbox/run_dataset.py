@@ -1,14 +1,9 @@
 import pandas as pd
 import json
-import sys
-import os
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 
 from sandbox import analyze_url
 
-df = pd.read_csv("../data/urls_labeled.csv")
+df = pd.read_csv("data/urls_labeled.csv")
 
 # ⚠️ TEST FIRST
 df = df.head(20)

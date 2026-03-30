@@ -1,7 +1,7 @@
 import json
 import pandas as pd
 
-with open("../results.json") as f:
+with open("results_mass.json") as f:
     data = json.load(f)
 
 rows = []
