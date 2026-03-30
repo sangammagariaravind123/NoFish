@@ -6,13 +6,14 @@ FROM python:3.10
 WORKDIR /app
 
 # Install dependencies first (better caching)
-RUN pip install playwright fastapi uvicorn
+RUN pip install playwright fastapi uvicorn pydantic pandas scikit-learn joblib
 RUN playwright install chromium --with-deps
 
 # Copy project files after
 COPY . .
 
-CMD ["python", "sandbox.py"]
+CMD ["python3", "scripts/run_dataset.py"]
 
 
+# docker build -t url-sandbox .
 # docker run --rm -v ${PWD}:/app url-sandbox
