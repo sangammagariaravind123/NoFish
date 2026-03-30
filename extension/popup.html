@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <style>
     body {
-      width: 250px;
+      width: 280px;
       padding: 15px;
       font-family: sans-serif;
     }
@@ -30,11 +30,32 @@
       font-size: 0.9rem;
       color: #555;
     }
+    button {
+      margin-top: 10px;
+      padding: 8px 12px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      width: 100%;
+    }
+    button:active {
+      background-color: #45a049;
+    }
+    .loading {
+      display: none;
+      margin-top: 10px;
+      font-style: italic;
+      color: #888;
+    }
   </style>
 </head>
 <body>
   <h3>PhishGuard</h3>
   <div id="result">Loading...</div>
+  <button id="deepScanBtn">🔍 Deep Scan (Sandbox)</button>
+  <div id="loading" class="loading">Analyzing in sandbox... please wait ~10 seconds</div>
   <script src="popup.js"></script>
 </body>
 </html>

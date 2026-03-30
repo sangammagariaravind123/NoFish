@@ -1,8 +1,10 @@
 # main.py
-
+import asyncio
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import joblib
+import pandas as pd
+from sandbox import get_behavioral_features  
 import numpy as np
 import tldextract
 import re
@@ -14,6 +16,8 @@ import os
 # If they are elsewhere, adjust the paths.
 rf_model = joblib.load("rf_hybrid_minilm.pkl")
 scaler = joblib.load("scaler_hybrid.pkl")
+
+behavioral_model = joblib.load("model.pkl")
 
 # --- Load the MiniLM model ---
 # This will download the model if not cached; first run may take a moment.
@@ -108,6 +112,45 @@ async def predict(request: URLRequest):
     try:
         result = predict_url(request.url)
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.post("/deep_scan")
+async def deep_scan(request: URLRequest):
+    try:
+        # 1. Run L1+L2 prediction (same as /predict)
+        l1l2_result = predict_url(request.url)
+        
+        # 2. Run sandbox to get behavioral features
+        features = await asyncio.to_thread(get_behavioral_features, request.url)
+        
+        # 3. Convert features to DataFrame (the model expects a DataFrame)
+        df = pd.DataFrame([features])
+        
+        # 4. Get behavioral probability (phishing)
+        behavioral_prob = behavioral_model.predict_proba(df)[0][1]  # probability of class 1 (phishing)
+        
+        # 5. Combine: if behavioral_prob > 0.6, final risk = Phishing, else use L1+L2
+        if behavioral_prob > 0.6:
+            final_risk = "Phishing"
+            final_trust = min(1.0, l1l2_result["trust_index"] + 0.2)  # adjust
+            explanation = f"Sandbox analysis detected high risk (behavioral score: {behavioral_prob:.2f})."
+        else:
+            final_risk = l1l2_result["risk"]
+            final_trust = l1l2_result["trust_index"]
+            explanation = f"L1+L2 analysis: {final_risk}. Sandbox did not detect high risk."
+        
+        # 6. Return combined result
+        return {
+            "final_risk": final_risk,
+            "final_trust_index": final_trust,
+            "l1l2": l1l2_result,
+            "sandbox": {
+                "behavioral_features": features,
+                "behavioral_prob": behavioral_prob
+            },
+            "explanation": explanation
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
