@@ -1,20 +1,18 @@
 import pandas as pd
 import json
-
 from sandbox import analyze_url
+from tqdm import tqdm
+df = pd.read_csv("urls_labeled.csv")
 
-df = pd.read_csv("data/urls_labeled.csv")
-
-# ⚠️ TEST FIRST
-df = df.head(20)
+# test first
+df = df.head(2000)
 
 results = []
+total = len(df)
 
-for i, row in df.iterrows():
+for i, row in tqdm(df.iterrows(), total=total):
     url = row["url"]
     label = row["label"]
-
-    print(f"[{i}] Scanning: {url}")
 
     try:
         r = analyze_url(url)
@@ -27,4 +25,4 @@ for i, row in df.iterrows():
 with open("results_mass.json", "w") as f:
     json.dump(results, f, indent=2)
 
-print("Done → results.json")
+print("\nDone → results_mass.json")

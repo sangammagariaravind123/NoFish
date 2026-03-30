@@ -17,6 +17,6 @@ df["label"] = df["status"].apply(lambda x: 1 if x.strip().lower() == "phishing" 
 # keep only needed columns
 df = df[["url", "label"]]
 
-df.to_csv("../data/urls_labeled.csv", index=False)
+df.to_csv("urls_labeled.csv", index=False)
 
 print("urls_labeled.csv created")

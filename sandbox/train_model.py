@@ -25,9 +25,10 @@ print("Test size:", X_test.shape)
 # 4. Train model
 model = RandomForestClassifier(
     n_estimators=100,
-    random_state=42
+    random_state=42,
+    verbose=1
 )
-
+print(f"Training on {len(X)} samples...")
 model.fit(X_train, y_train)
 
 # 5. Predict

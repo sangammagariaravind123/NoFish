@@ -1,4 +1,7 @@
 venv
 sandbox/sb
 sandbox/results.json
-.dump.md
+.dump.mdsandbox/results_mass.json
+sandbox/model.pkl
+sandbox/__pycache__/
+sandbox/results_mass.json
