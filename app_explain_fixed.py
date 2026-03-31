@@ -137,7 +137,7 @@ def extract_basic_features(url):
     }
 
 
-def extract_top12_features(url):
+def extract_12(url):
     features = {}
 
     # ------------------------
