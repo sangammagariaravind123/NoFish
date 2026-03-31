@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import joblib
 import pandas as pd
-from sandbox import get_behavioral_features  
+from sandbox import analyze_url
 import numpy as np
 import tldextract
 import re
@@ -119,41 +119,54 @@ async def predict(request: URLRequest):
 @app.post("/deep_scan")
 async def deep_scan(request: URLRequest):
     try:
-        # 1. L1+L2 prediction (sync, but light)
+        # L1 + L2 result
         l1l2_result = predict_url(request.url)
 
-        # 2. Run sandbox in a thread to avoid blocking the event loop
-        features = await asyncio.to_thread(get_behavioral_features, request.url)
+        # Full sandbox result (RAW)
+        sandbox_result = await asyncio.to_thread(analyze_url, request.url)
 
-        # 3. Convert to DataFrame
-        df = pd.DataFrame([features])
+        # Only the ML input subset for behavioral model
+        behavioral_features = {
+            "total_requests": sandbox_result.get("total_requests", 0),
+            "external_domain_count": sandbox_result.get("external_domain_count", 0),
+            "redirect_count": sandbox_result.get("redirect_count", 0),
+            "js_requests": sandbox_result.get("js_requests", 0),
+            "ip_based_requests": sandbox_result.get("ip_based_requests", 0),
+            "suspicious_tld_count": sandbox_result.get("suspicious_tld_count", 0),
+            "download_attempts": len(sandbox_result.get("download_attempts", []))
+        }
 
-        # 4. Get behavioral probability
+        df = pd.DataFrame([behavioral_features])
+
         behavioral_prob = behavioral_model.predict_proba(df)[0][1]
 
-        # 5. Final risk based on sandbox
         if behavioral_prob > 0.6:
             final_risk = "Phishing"
         elif behavioral_prob > 0.4:
             final_risk = "Suspicious"
         else:
             final_risk = "Safe"
-        final_trust = behavioral_prob
 
-        explanation = f"Sandbox analysis gave behavioral score {behavioral_prob:.2f}. Final risk determined by sandbox."
+        final_trust = 1 - behavioral_prob
+
+        explanation = (
+            "Sandbox executed the URL in an isolated browser and extracted runtime behavior."
+        )
 
         return {
+            "scanned_url": request.url,
             "final_risk": final_risk,
             "final_trust_index": final_trust,
             "l1l2": l1l2_result,
             "sandbox": {
-                "behavioral_features": features,
-                "behavioral_prob": behavioral_prob
+                "behavioral_prob": behavioral_prob,
+                "behavioral_features": behavioral_features,
+                "raw_output": sandbox_result
             },
             "explanation": explanation
         }
+
     except Exception as e:
-        # Print traceback to server console for debugging
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))

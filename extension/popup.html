@@ -49,6 +49,19 @@
       font-style: italic;
       color: #888;
     }
+    .why-btn {
+      background-color: #2196F3;
+      margin-top: 5px;
+    }
+    .explanation-box {
+      background-color: #f0f0f0;
+      border-radius: 4px;
+      padding: 8px;
+      margin-top: 8px;
+      font-size: 0.85rem;
+      display: none;
+      text-align: left;
+    }
   </style>
 </head>
 <body>
@@ -56,6 +69,8 @@
   <div id="result">Loading...</div>
   <button id="deepScanBtn">🔍 Deep Scan (Sandbox)</button>
   <div id="loading" class="loading">Analyzing in sandbox... please wait ~10 seconds</div>
+  <button id="whyBtn" class="why-btn" style="display:none;">❓ Show Why</button>
+  <div id="explanationBox" class="explanation-box"></div>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -1,76 +1,152 @@
-// popup.js
-
 const DEEP_SCAN_EXPIRY = 5 * 60 * 1000; // 5 minutes
 
-// Display either normal L1+L2 result or deep scan result
+function formatList(items, emptyText = "None") {
+  if (!items || !items.length) return emptyText;
+  return items.map(item => `• ${item}`).join("<br>");
+}
+
 function displayResult(result, isDeepScan = false) {
   const container = document.getElementById("result");
+  const whyBtn = document.getElementById("whyBtn");
+  const explanationBox = document.getElementById("explanationBox");
+
   if (!result) {
     container.innerHTML = "<p>No recent scan.</p>";
+    whyBtn.style.display = "none";
+    explanationBox.style.display = "none";
     return;
   }
 
-  let riskClass = "";
-  let trustIndex = result.trust_index;
-  let risk = result.risk;
-  let triggeredRules = result.triggered_rules || [];
-  let mlProb = result.ml_prob;
-  let ruleScore = result.rule_score;
-
   if (isDeepScan) {
-    risk = result.final_risk;
-    trustIndex = result.final_trust_index;
-    riskClass = risk.toLowerCase();
-    triggeredRules = result.l1l2?.triggered_rules || [];
-    mlProb = result.l1l2?.ml_prob;
-    ruleScore = result.l1l2?.rule_score;
-
+    const risk = result.final_risk || "Unknown";
+    const riskClass = risk.toLowerCase();
+    const trustIndex = result.final_trust_index ?? 0;
     const sandboxProb = result.sandbox?.behavioral_prob;
-    const explanation = result.explanation;
+    const raw = result.sandbox?.raw_output || {};
 
     container.innerHTML = `
       <div class="risk ${riskClass}">Risk: <strong>${risk}</strong></div>
       <div class="trust">Trust Index: ${(trustIndex * 100).toFixed(1)}%</div>
-      <div class="rules"><strong>Deep Scan:</strong> ${explanation}</div>
-      <div><small>Sandbox behavioral probability: ${sandboxProb ? (sandboxProb * 100).toFixed(1) : 'N/A'}%</small></div>
+      <div><small>Sandbox behavioral probability: ${
+        sandboxProb !== undefined ? (sandboxProb * 100).toFixed(1) : "N/A"
+      }%</small></div>
       <hr>
-      <div><small>L1+L2: ${risk} (Trust: ${(trustIndex * 100).toFixed(1)}%)</small></div>
-      <div><small>ML probability: ${mlProb ? (mlProb * 100).toFixed(1) : 'N/A'}%</small></div>
-      <div><small>Rule score: ${ruleScore ? (ruleScore * 100).toFixed(1) : 'N/A'}%</small></div>
-      <div class="rules"><strong>Rules triggered:</strong> ${triggeredRules.join(", ") || "None"}</div>
+      <div class="rules"><strong>Scanned URL:</strong> ${result.scanned_url || "N/A"}</div>
+      <div class="rules"><strong>Final URL:</strong> ${raw.final_url || "N/A"}</div>
     `;
+
+    const downloadList = (raw.download_attempts || []).map(
+      d => `${d.suggested_filename || "unknown"} (${d.url || "no url"})`
+    );
+
+    const explanationHtml = `
+      <strong>🔬 Sandbox Output</strong><br><br>
+
+      <strong>Original URL:</strong><br>${raw.url || "N/A"}<br><br>
+      <strong>Final URL:</strong><br>${raw.final_url || "N/A"}<br><br>
+
+      <strong>Behavior Summary</strong><br>
+      • Total requests: ${raw.total_requests ?? "N/A"}<br>
+      • External domain count: ${raw.external_domain_count ?? "N/A"}<br>
+      • Redirect count: ${raw.redirect_count ?? "N/A"}<br>
+      • JavaScript requests: ${raw.js_requests ?? "N/A"}<br>
+      • IP-based requests: ${raw.ip_based_requests ?? "N/A"}<br>
+      • Suspicious TLD count: ${raw.suspicious_tld_count ?? "N/A"}<br>
+      • Download attempts: ${(raw.download_attempts || []).length}<br><br>
+
+      <strong>External Domains Contacted</strong><br>
+      ${formatList(raw.external_domains || [])}<br><br>
+
+      <strong>Download Attempt Details</strong><br>
+      ${formatList(downloadList, "None")}<br><br>
+
+      <strong>All Requests (first 15)</strong><br>
+      ${formatList((raw.all_requests || []).slice(0, 15), "None")}
+      ${(raw.all_requests || []).length > 15 ? "<br>• ...truncated..." : ""}
+    `;
+
+    explanationBox.innerHTML = explanationHtml;
+    whyBtn.style.display = "block";
+    whyBtn.textContent = "❓ Show Why";
+    explanationBox.style.display = "none";
   } else {
-    riskClass = risk.toLowerCase();
-    const trustPercent = (trustIndex * 100).toFixed(1);
+    const risk = result.risk || "Unknown";
+    const riskClass = risk.toLowerCase();
+    const trustIndex = result.trust_index ?? 0;
+    const mlProb = result.ml_prob ?? 0;
+    const ruleScore = result.rule_score ?? 0;
+    const triggeredRules = result.triggered_rules || [];
+
     let rulesHtml = "";
-    if (triggeredRules && triggeredRules.length) {
+    if (triggeredRules.length) {
       rulesHtml = `<div class="rules"><strong>Rules triggered:</strong> ${triggeredRules.join(", ")}</div>`;
     }
+
     container.innerHTML = `
       <div class="risk ${riskClass}">Risk: <strong>${risk}</strong></div>
-      <div class="trust">Trust Index: ${trustPercent}%</div>
+      <div class="trust">Trust Index: ${(trustIndex * 100).toFixed(1)}%</div>
       ${rulesHtml}
       <hr>
       <div><small>ML probability: ${(mlProb * 100).toFixed(1)}%</small></div>
       <div><small>Rule score: ${(ruleScore * 100).toFixed(1)}%</small></div>
     `;
+
+    whyBtn.style.display = "none";
+    explanationBox.style.display = "none";
   }
 }
 
-// Get the current tab URL
-async function getCurrentTabUrl() {
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tabs[0]?.url;
+function toggleExplanation() {
+  const box = document.getElementById("explanationBox");
+  const btn = document.getElementById("whyBtn");
+
+  if (box.style.display === "none") {
+    box.style.display = "block";
+    btn.textContent = "❓ Hide Why";
+  } else {
+    box.style.display = "none";
+    btn.textContent = "❓ Show Why";
+  }
 }
 
-// Perform deep scan and update everything
+async function getCurrentTab() {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tabs[0];
+}
+
+async function getUrlForDeepScan() {
+  const tab = await getCurrentTab();
+  const currentUrl = tab?.url;
+
+  if (!currentUrl) return null;
+
+  // If user is on extension warning page, extract original blocked URL
+  if (currentUrl.includes("/warning/warning.html")) {
+    try {
+      const parsed = new URL(currentUrl);
+      const originalUrl = parsed.searchParams.get("url");
+      return originalUrl || currentUrl;
+    } catch {
+      return currentUrl;
+    }
+  }
+
+  return currentUrl;
+}
+
 async function runDeepScan() {
   const loadingDiv = document.getElementById("loading");
-  loadingDiv.style.display = "block";
   const btn = document.getElementById("deepScanBtn");
-  btn.disabled = true;
+  const whyBtn = document.getElementById("whyBtn");
+  const explanationBox = document.getElementById("explanationBox");
 
-  const url = await getCurrentTabUrl();
+  loadingDiv.style.display = "block";
+  btn.disabled = true;
+  whyBtn.style.display = "none";
+  explanationBox.style.display = "none";
+
+  const url = await getUrlForDeepScan();
+
   if (!url) {
     loadingDiv.style.display = "none";
     btn.disabled = false;
@@ -82,12 +158,13 @@ async function runDeepScan() {
     const response = await fetch("http://localhost:8000/deep_scan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: url })
+      body: JSON.stringify({ url })
     });
+
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
     const deepResult = await response.json();
 
-    // 1. Update toolbar icon based on final risk
     if (deepResult.final_risk === "Phishing") {
       chrome.action.setIcon({ path: "icons/danger.png" });
     } else if (deepResult.final_risk === "Suspicious") {
@@ -96,59 +173,59 @@ async function runDeepScan() {
       chrome.action.setIcon({ path: "icons/safe.png" });
     }
 
-    // 2. Store deep scan result with URL and timestamp
     const deepScanStore = {
-      url: url,
+      url,
       result: deepResult,
       timestamp: Date.now()
     };
+
     await chrome.storage.local.set({ deepScanResult: deepScanStore });
 
-    // 3. Overwrite lastResult so the popup immediately shows deep scan result
-    //    This is used when the popup is already open (we'll also display it directly)
     await chrome.storage.local.set({
       lastResult: {
         risk: deepResult.final_risk,
-        trust_index: deepResult.final_trust_index,
-        ml_prob: deepResult.l1l2.ml_prob,
-        rule_score: deepResult.l1l2.rule_score,
-        triggered_rules: deepResult.l1l2.triggered_rules
+        trust_index: deepResult.final_trust_index
       }
     });
 
-    // 4. Display the deep result right now in the popup
     displayResult(deepResult, true);
   } catch (error) {
     console.error("Deep scan error:", error);
-    document.getElementById("result").innerHTML = `<p>Deep scan failed. Is the API running?<br>${error.message}</p>`;
+    document.getElementById("result").innerHTML =
+      `<p>Deep scan failed. Is the API running?<br>${error.message}</p>`;
+    whyBtn.style.display = "none";
+    explanationBox.style.display = "none";
   } finally {
     loadingDiv.style.display = "none";
     btn.disabled = false;
   }
 }
 
-// On popup load, decide what to show
 chrome.storage.local.get(["deepScanResult", "lastResult"], async (data) => {
-  const currentUrl = await getCurrentTabUrl();
-  if (!currentUrl) {
+  const url = await getUrlForDeepScan();
+
+  if (!url) {
     document.getElementById("result").innerHTML = "<p>Unable to get current tab URL.</p>";
     return;
   }
 
   const deepScanStore = data.deepScanResult;
-  if (deepScanStore && deepScanStore.url === currentUrl && (Date.now() - deepScanStore.timestamp) < DEEP_SCAN_EXPIRY) {
-    // Show deep scan result if it's for the current URL and not too old
+
+  if (
+    deepScanStore &&
+    deepScanStore.url === url &&
+    (Date.now() - deepScanStore.timestamp) < DEEP_SCAN_EXPIRY
+  ) {
     displayResult(deepScanStore.result, true);
   } else {
-    // Otherwise show the normal lastResult from background (L1+L2)
     const lastResult = data.lastResult;
     if (lastResult) {
-      displayResult(lastResult);
+      displayResult(lastResult, false);
     } else {
       document.getElementById("result").innerHTML = "<p>No recent scan.</p>";
     }
   }
 });
 
-// Attach deep scan button listener
 document.getElementById("deepScanBtn").addEventListener("click", runDeepScan);
+document.getElementById("whyBtn").addEventListener("click", toggleExplanation);
