@@ -6,6 +6,17 @@ import matplotlib.pyplot as plt
 import torch
 from sentence_transformers import SentenceTransformer
 from urllib.parse import urlparse
+import re
+import requests
+from urllib.parse import urlparse
+from bs4 import BeautifulSoup
+import socket
+
+try:
+    import whois
+except:
+    print("could not import whois")
+    whois = None
 
 # 🔧 PATCH: prevent SHAP from misdetecting deep learning models
 warnings.filterwarnings("ignore", category=UserWarning)
