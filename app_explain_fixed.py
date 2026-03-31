@@ -137,6 +137,102 @@ def extract_basic_features(url):
     }
 
 
+def extract_top12_features(url):
+    features = {}
+
+    # ------------------------
+    # URL parsing
+    # ------------------------
+    parsed = urlparse(url)
+    hostname = parsed.netloc
+
+    # 1. length_url
+    features["length_url"] = len(url)
+
+    # 2. length_hostname
+    features["length_hostname"] = len(hostname)
+
+    # 3. nb_www
+    features["nb_www"] = url.count("www")
+
+    # 4. nb_qm
+    features["nb_qm"] = url.count("?")
+
+    # 5. ratio_digits_url
+    digits = sum(c.isdigit() for c in url)
+    features["ratio_digits_url"] = digits / len(url) if len(url) > 0 else 0
+
+    # 6. ip (check if hostname is IP)
+    features["ip"] = 1 if re.match(r"\d+\.\d+\.\d+\.\d+", hostname) else 0
+
+    # 7. phish_hints
+    features["phish_hints"] = sum(1 for word in PHISH_KEYWORDS if word in url.lower())
+
+    # ------------------------
+    # Fetch webpage (optional)
+    # ------------------------
+    try:
+        response = requests.get(url, timeout=5)
+        html = response.text
+        soup = BeautifulSoup(html, "html.parser")
+
+        # 8. nb_hyperlinks
+        links = soup.find_all("a")
+        features["nb_hyperlinks"] = len(links)
+
+        # 9. ratio_intHyperlinks
+        internal_links = 0
+        for link in links:
+            href = link.get("href")
+            if href and hostname in href:
+                internal_links += 1
+
+        features["ratio_intHyperlinks"] = (
+            internal_links / len(links) if len(links) > 0 else 0
+        )
+
+        # 10. domain_in_title
+        title = soup.title.string if soup.title else ""
+        features["domain_in_title"] = 1 if hostname in title else 0
+
+    except:
+        features["nb_hyperlinks"] = 0
+        features["ratio_intHyperlinks"] = 0
+        features["domain_in_title"] = 0
+
+    # ------------------------
+    # 11. domain_age (optional)
+    # ------------------------
+    if whois:
+        try:
+            w = whois.whois(hostname)
+            creation_date = w.creation_date
+
+            if isinstance(creation_date, list):
+                creation_date = creation_date[0]
+
+            if creation_date:
+                age_days = (datetime.now() - creation_date).days
+                features["domain_age"] = age_days
+            else:
+                features["domain_age"] = 0
+        except:
+            features["domain_age"] = 0
+    else:
+        features["domain_age"] = 0
+
+    # ------------------------
+    # 12. google_index (mock)
+    # ------------------------
+    # Real Google index requires API/scraping
+    # Placeholder: assume indexed if response OK
+    features["google_index"] = (
+        1 if "response" in locals() and response.status_code == 200 else 0
+    )
+
+    return features
+
+
 # ==========================================================
 # === Prediction Function ==================================
 # ==========================================================
