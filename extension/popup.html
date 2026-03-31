@@ -4,32 +4,44 @@
   <meta charset="UTF-8">
   <style>
     body {
-      width: 280px;
+      width: 320px;
       padding: 15px;
       font-family: sans-serif;
+      box-sizing: border-box;
     }
+
+    * {
+      box-sizing: border-box;
+    }
+
     h3 {
       margin-top: 0;
     }
+
     .risk {
       font-weight: bold;
       margin: 10px 0;
     }
+
     .safe { color: green; }
     .suspicious { color: orange; }
     .phishing { color: red; }
     .unknown { color: gray; }
+
     .trust {
       font-size: 1.2rem;
       margin: 5px 0;
     }
+
     hr {
       margin: 10px 0;
     }
+
     .rules {
       font-size: 0.9rem;
       color: #555;
     }
+
     button {
       margin-top: 10px;
       padding: 8px 12px;
@@ -39,20 +51,30 @@
       border-radius: 4px;
       cursor: pointer;
       width: 100%;
+      font-size: 14px;
     }
+
     button:active {
       background-color: #45a049;
     }
+
     .loading {
       display: none;
       margin-top: 10px;
       font-style: italic;
       color: #888;
     }
+
     .why-btn {
       background-color: #2196F3;
       margin-top: 5px;
     }
+
+    .nested-btn {
+      background-color: #6c757d;
+      margin-top: 8px;
+    }
+
     .explanation-box {
       background-color: #f0f0f0;
       border-radius: 4px;
@@ -61,6 +83,47 @@
       font-size: 0.85rem;
       display: none;
       text-align: left;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      white-space: normal;
+      max-height: 380px;
+      overflow-y: auto;
+    }
+
+    .url-line {
+      display: block;
+      margin-top: 2px;
+      margin-bottom: 10px;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      white-space: normal;
+      line-height: 1.35;
+    }
+
+    .request-list {
+      display: none;
+      margin-top: 8px;
+      padding-left: 18px;
+      max-height: 180px;
+      overflow-y: auto;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding-top: 8px;
+      padding-right: 8px;
+      padding-bottom: 8px;
+    }
+
+    .request-list li {
+      margin-bottom: 8px;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      white-space: normal;
+      line-height: 1.35;
+    }
+
+    .small-text {
+      font-size: 0.85rem;
     }
   </style>
 </head>
