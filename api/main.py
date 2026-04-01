@@ -127,13 +127,30 @@ async def deep_scan(request: URLRequest):
 
         # Only the ML input subset for behavioral model
         behavioral_features = {
+            # old
             "total_requests": sandbox_result.get("total_requests", 0),
             "external_domain_count": sandbox_result.get("external_domain_count", 0),
             "redirect_count": sandbox_result.get("redirect_count", 0),
             "js_requests": sandbox_result.get("js_requests", 0),
             "ip_based_requests": sandbox_result.get("ip_based_requests", 0),
             "suspicious_tld_count": sandbox_result.get("suspicious_tld_count", 0),
-            "download_attempts": len(sandbox_result.get("download_attempts", []))
+            "download_attempts": len(sandbox_result.get("download_attempts", [])),
+
+            # new
+            "final_url_differs": sandbox_result.get("final_url_differs", 0),
+            "unique_request_domains": sandbox_result.get("unique_request_domains", 0),
+            "unique_request_domain_ratio": sandbox_result.get("unique_request_domain_ratio", 0),
+            "script_domain_count": sandbox_result.get("script_domain_count", 0),
+            "external_request_ratio": sandbox_result.get("external_request_ratio", 0),
+            "error_flag": sandbox_result.get("error_flag", 0),
+            "timeout_flag": sandbox_result.get("timeout_flag", 0),
+            "document_requests": sandbox_result.get("document_requests", 0),
+            "script_requests": sandbox_result.get("script_requests", 0),
+            "stylesheet_requests": sandbox_result.get("stylesheet_requests", 0),
+            "image_requests": sandbox_result.get("image_requests", 0),
+            "font_requests": sandbox_result.get("font_requests", 0),
+            "xhr_fetch_requests": sandbox_result.get("xhr_fetch_requests", 0),
+            "other_requests": sandbox_result.get("other_requests", 0)
         }
 
         df = pd.DataFrame([behavioral_features])
