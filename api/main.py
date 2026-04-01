@@ -1,32 +1,43 @@
 # main.py
 import asyncio
+import os
+import sys
+
+import joblib
+import numpy as np
+import pandas as pd
+import tldextract
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import joblib
-import pandas as pd
-from sandbox import analyze_url
-import numpy as np
-import tldextract
-import re
 from sentence_transformers import SentenceTransformer
-import os
 
-# --- Load the trained model and scaler ---
-# Assume these files are in the same directory as this script.
-# If they are elsewhere, adjust the paths.
-rf_model = joblib.load("rf_hybrid_minilm.pkl")
-scaler = joblib.load("scaler_hybrid.pkl")
+from sandbox import analyze_url
 
-behavioral_model = joblib.load("model.pkl")
+API_DIR = os.path.dirname(__file__)
+PROJECT_ROOT = os.path.dirname(API_DIR)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from behavioral_transformer import BehavioralPredictor
+
+
+def project_path(*parts: str) -> str:
+    return os.path.join(PROJECT_ROOT, *parts)
+
+
+# --- Load the trained models ---
+rf_model = joblib.load(project_path("api", "rf_hybrid_minilm.pkl"))
+scaler = joblib.load(project_path("api", "scaler_hybrid.pkl"))
+behavioral_model = BehavioralPredictor(project_path("api", "behavior_transformer.pt"))
 
 # --- Load the MiniLM model ---
-# This will download the model if not cached; first run may take a moment.
 minilm_model = SentenceTransformer("all-MiniLM-L6-v2")
 
 # --- Rule engine (same as in your app) ---
-SUSPICIOUS_TLDS = ["tk","ml","ga","cf","gq","xyz","top","club","work","zip","link","cn"]
-PHISHING_KEYWORDS = ["login","verify","update","secure","account","bank","payment","signin","confirm"]
-URL_SHORTENERS = ["bit.ly","tinyurl","goo.gl","t.co","is.gd","buff.ly","adf.ly","shorturl"]
+SUSPICIOUS_TLDS = ["tk", "ml", "ga", "cf", "gq", "xyz", "top", "club", "work", "zip", "link", "cn"]
+PHISHING_KEYWORDS = ["login", "verify", "update", "secure", "account", "bank", "payment", "signin", "confirm"]
+URL_SHORTENERS = ["bit.ly", "tinyurl", "goo.gl", "t.co", "is.gd", "buff.ly", "adf.ly", "shorturl"]
+
 
 def compute_rule_score(url):
     score = 0
@@ -49,7 +60,7 @@ def compute_rule_score(url):
         rules.append("Shortener")
     return score / 5, rules
 
-# --- Basic numeric feature extractor (same as app) ---
+
 def extract_basic_features(url):
     u = str(url)
     return {
@@ -60,32 +71,20 @@ def extract_basic_features(url):
         "ratio_digits_url": sum(c.isdigit() for c in u) / len(u) if len(u) > 0 else 0,
     }
 
-# --- Prediction function ---
+
 def predict_url(url):
-    # 1. Get MiniLM embedding
     emb = minilm_model.encode([url], show_progress_bar=False)
-
-    # 2. Get basic numeric features
     feat = np.array(list(extract_basic_features(url).values())).reshape(1, -1)
-
-    # 3. Pad to match the number of features the scaler expects
     pad = np.zeros((1, scaler.mean_.shape[0] - feat.shape[1]))
     num_scaled = np.hstack([feat, pad])
-
-    # 4. Combine embedding + numeric
     X_hybrid = np.hstack([emb, num_scaled])
 
-    # 5. Get ML probability (phishing class)
     prob = rf_model.predict_proba(X_hybrid)[0][1]
-
-    # 6. Rule score
     rule_score, rules = compute_rule_score(url)
 
-    # 7. Compute Trust Index
     trust_index = 0.7 * prob + 0.3 * (1 - rule_score)
     trust_index = max(0.0, min(1.0, trust_index))
 
-    # 8. Determine risk level
     if trust_index >= 0.6:
         risk = "Safe"
     elif trust_index >= 0.4:
@@ -98,36 +97,32 @@ def predict_url(url):
         "risk": risk,
         "ml_prob": prob,
         "rule_score": rule_score,
-        "triggered_rules": rules
+        "triggered_rules": rules,
     }
 
-# --- Create FastAPI app ---
+
 app = FastAPI(title="PhishGuard API", description="URL phishing detection", version="1.0")
+
 
 class URLRequest(BaseModel):
     url: str
 
+
 @app.post("/predict")
 async def predict(request: URLRequest):
     try:
-        result = predict_url(request.url)
-        return result
+        return predict_url(request.url)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 
 @app.post("/deep_scan")
 async def deep_scan(request: URLRequest):
     try:
-        # L1 + L2 result
         l1l2_result = predict_url(request.url)
-
-        # Full sandbox result (RAW)
         sandbox_result = await asyncio.to_thread(analyze_url, request.url)
 
-        # Only the ML input subset for behavioral model
         behavioral_features = {
-            # old
             "total_requests": sandbox_result.get("total_requests", 0),
             "external_domain_count": sandbox_result.get("external_domain_count", 0),
             "redirect_count": sandbox_result.get("redirect_count", 0),
@@ -135,8 +130,6 @@ async def deep_scan(request: URLRequest):
             "ip_based_requests": sandbox_result.get("ip_based_requests", 0),
             "suspicious_tld_count": sandbox_result.get("suspicious_tld_count", 0),
             "download_attempts": len(sandbox_result.get("download_attempts", [])),
-
-            # new
             "final_url_differs": sandbox_result.get("final_url_differs", 0),
             "unique_request_domains": sandbox_result.get("unique_request_domains", 0),
             "unique_request_domain_ratio": sandbox_result.get("unique_request_domain_ratio", 0),
@@ -150,12 +143,10 @@ async def deep_scan(request: URLRequest):
             "image_requests": sandbox_result.get("image_requests", 0),
             "font_requests": sandbox_result.get("font_requests", 0),
             "xhr_fetch_requests": sandbox_result.get("xhr_fetch_requests", 0),
-            "other_requests": sandbox_result.get("other_requests", 0)
+            "other_requests": sandbox_result.get("other_requests", 0),
         }
 
-        df = pd.DataFrame([behavioral_features])
-
-        behavioral_prob = behavioral_model.predict_proba(df)[0][1]
+        behavioral_prob = float(behavioral_model.predict_proba(behavioral_features)[0])
 
         if behavioral_prob > 0.6:
             final_risk = "Phishing"
@@ -165,10 +156,7 @@ async def deep_scan(request: URLRequest):
             final_risk = "Safe"
 
         final_trust = 1 - behavioral_prob
-
-        explanation = (
-            "Sandbox executed the URL in an isolated browser and extracted runtime behavior."
-        )
+        explanation = "Sandbox executed the URL in an isolated browser and extracted runtime behavior."
 
         return {
             "scanned_url": request.url,
@@ -178,15 +166,18 @@ async def deep_scan(request: URLRequest):
             "sandbox": {
                 "behavioral_prob": behavioral_prob,
                 "behavioral_features": behavioral_features,
-                "raw_output": sandbox_result
+                "raw_output": sandbox_result,
+                "model_type": "transformer",
             },
-            "explanation": explanation
+            "explanation": explanation,
         }
 
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/")
 async def root():

@@ -5,3 +5,4 @@ sandbox/results.json
 sandbox/model.pkl
 sandbox/__pycache__/
 sandbox/results_mass.json
+api/venv
