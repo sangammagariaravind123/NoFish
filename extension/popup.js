@@ -117,6 +117,24 @@ function displayResult(result, isDeepScan = false) {
       • Suspicious TLD count: ${raw.suspicious_tld_count ?? "N/A"}<br>
       • Download attempts: ${(raw.download_attempts || []).length}<br><br>
 
+      <strong>Advanced Signals</strong><br>
+      • Final URL differs: ${raw.final_url_differs ?? "N/A"}<br>
+      • Unique request domains: ${raw.unique_request_domains ?? "N/A"}<br>
+      • Domain diversity ratio: ${raw.unique_request_domain_ratio ?? "N/A"}<br>
+      • Script domain count: ${raw.script_domain_count ?? "N/A"}<br>
+      • External request ratio: ${raw.external_request_ratio ?? "N/A"}<br>
+      • Error flag: ${raw.error_flag ?? "N/A"}<br>
+      • Timeout flag: ${raw.timeout_flag ?? "N/A"}<br><br>
+
+      <strong>Request Type Breakdown</strong><br>
+      • Document: ${raw.document_requests ?? "N/A"}<br>
+      • Script: ${raw.script_requests ?? "N/A"}<br>
+      • Stylesheet: ${raw.stylesheet_requests ?? "N/A"}<br>
+      • Image: ${raw.image_requests ?? "N/A"}<br>
+      • Font: ${raw.font_requests ?? "N/A"}<br>
+      • XHR/Fetch: ${raw.xhr_fetch_requests ?? "N/A"}<br>
+      • Other: ${raw.other_requests ?? "N/A"}<br><br>
+
       <strong>External Domains Contacted</strong><br>
       ${formatList(raw.external_domains || [])}<br><br>
 
