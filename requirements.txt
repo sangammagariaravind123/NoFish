@@ -2,6 +2,7 @@ streamlit
 pandas
 numpy
 sentence-transformers
+torch
 tldextract
 scikit-learn
 joblib
@@ -9,6 +10,10 @@ shap
 matplotlib
 bs4
 whois
+fastapi
+uvicorn
+playwright
+requests
 
 # warnings
 # sentence_transformers

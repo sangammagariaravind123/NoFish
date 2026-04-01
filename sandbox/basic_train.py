@@ -1,21 +1,27 @@
 import json
-import pandas as pd
-
-with open("results.json") as f:
-    data = json.load(f)
-
-df = pd.DataFrame(data)
-df.to_csv("dataset.csv", index=False)
+import os
 
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
 
-df = pd.read_csv("dataset.csv")
+from train_model import main as train_transformer
 
-X = df.drop(columns=["url", "label"])
-y = df["label"]
 
-model = RandomForestClassifier()
-model.fit(X, y)
+CURRENT_DIR = os.path.dirname(__file__)
+RESULTS_PATH = os.path.join(CURRENT_DIR, "results.json")
+DATASET_PATH = os.path.join(CURRENT_DIR, "dataset.csv")
 
-print("Model trained")
+
+def main():
+    with open(RESULTS_PATH, encoding="utf-8") as f:
+        data = json.load(f)
+
+    df = pd.DataFrame(data)
+    df.to_csv(DATASET_PATH, index=False)
+    print(f"Converted {RESULTS_PATH} -> {DATASET_PATH}")
+
+    print("Starting Transformer-based sandbox training...")
+    train_transformer()
+
+
+if __name__ == "__main__":
+    main()
