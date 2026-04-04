@@ -2,3 +2,7 @@ playwright
 fastapi
 uvicorn
 requests
+torch
+numpy
+pandas
+scikit-learn
