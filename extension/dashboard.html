@@ -17,6 +17,14 @@
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
       margin-bottom: 12px;
     }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
   </style>
 </head>
 <body>
@@ -30,6 +38,9 @@
         <button id="refreshBtn" class="btn secondary">Refresh</button>
         <button id="openSettingsBtn" class="btn ghost">Settings</button>
       </div>
+    </div>
+    <div id="refreshProgress" class="progress-shell">
+      <div class="progress-bar"></div>
     </div>
 
     <div class="card stack">
@@ -71,7 +82,10 @@
     <div class="split">
       <div class="stack">
         <div class="card summary-card">
-          <h3>History Filters</h3>
+          <div class="section-header">
+            <h3>History Filters</h3>
+            <button id="clearHistoryBtn" class="btn ghost">Clear All</button>
+          </div>
           <div class="filters">
             <div class="field">
               <label for="classificationFilter">Classification</label>
@@ -96,13 +110,14 @@
             </div>
           </div>
           <div class="table-wrap">
-            <table>
+            <table class="history-table">
               <thead>
                 <tr>
-                  <th>URL</th>
-                  <th>Risk</th>
-                  <th>Classification</th>
-                  <th>Timestamp</th>
+                  <th class="history-url-col">URL</th>
+                  <th class="history-risk-col">Risk</th>
+                  <th class="history-class-col">Classification</th>
+                  <th class="history-time-col">Timestamp</th>
+                  <th class="history-action-col">Actions</th>
                 </tr>
               </thead>
               <tbody id="historyTableBody"></tbody>

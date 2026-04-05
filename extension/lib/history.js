@@ -1,7 +1,7 @@
 import { MAX_LOCAL_HISTORY, RISK_ORDER, STORAGE_KEYS } from "./constants.js";
 import { getValue, updateValue } from "./storage.js";
-import { getSupabaseClient } from "./supabase-client.js";
-import { getBaseDomain } from "./url-utils.js";
+import { ensureSupabaseSession, getSupabaseClient } from "./supabase-client.js";
+import { getBaseDomain, normalizeUrl } from "./url-utils.js";
 
 function extractTriggeredRules(rawResult) {
   if (!rawResult) return [];
@@ -39,9 +39,13 @@ export function normalizeScanPayload(url, result, scanType = "predict", source =
 }
 
 async function getSessionUser() {
-  const supabase = getSupabaseClient();
-  const { data } = await supabase.auth.getSession();
-  return data.session?.user ?? null;
+  const session = await ensureSupabaseSession();
+  if (session?.user) {
+    console.info("[PhishGuard] History module using signed-in user", session.user.email || session.user.id);
+  } else {
+    console.info("[PhishGuard] History module found no signed-in session.");
+  }
+  return session?.user ?? null;
 }
 
 async function getLocalHistory() {
@@ -70,7 +74,10 @@ export async function persistScanRecord(payload) {
 
   const user = await getSessionUser();
   if (user) {
+    console.info("[PhishGuard] Attempting remote scan save for", user.email || user.id, payload.url);
     await persistRemoteHistory(user.id, historyRecord);
+  } else {
+    console.info("[PhishGuard] No signed-in session found, keeping scan in local history only.");
   }
 
   return historyRecord;
@@ -109,7 +116,10 @@ async function persistRemoteHistory(userId, record) {
   };
 
   const { error: historyError } = await supabase.from("scan_history").insert(historyPayload);
-  if (historyError) throw historyError;
+  if (historyError) {
+    console.warn("[PhishGuard] Remote scan_history insert failed:", historyError.message || historyError);
+    throw historyError;
+  }
 
   if (record.rawResult) {
     const { error: logError } = await supabase.from("scan_analysis_logs").insert({
@@ -119,13 +129,19 @@ async function persistRemoteHistory(userId, record) {
       created_at: record.timestamp
     });
 
-    if (logError) throw logError;
+    if (logError) {
+      console.warn("[PhishGuard] Remote scan_analysis_logs insert failed:", logError.message || logError);
+      throw logError;
+    }
   }
+
+  console.info("[PhishGuard] Remote scan saved successfully for", record.url);
 }
 
 export async function getHistory() {
   const user = await getSessionUser();
   if (!user) {
+    console.info("[PhishGuard] Dashboard history source: local only");
     return getLocalHistory();
   }
 
@@ -186,6 +202,10 @@ export async function getHistory() {
       };
     });
 
+    console.info("[PhishGuard] Dashboard history source: remote + local cache", {
+      remote: remoteHistory.length,
+      local: localHistory.length
+    });
     return mergeHistoryRecords(remoteHistory, localHistory);
   } catch (error) {
     console.warn("Remote history unavailable, using local history fallback:", error.message || error);
@@ -253,10 +273,31 @@ export async function getWarningEvents() {
 }
 
 export function buildTrendBuckets(history) {
+  const normalizedHistory = history
+    .map((item) => {
+      const timestamp = new Date(item.timestamp);
+      const classification = normalizeClassification(item.classification || item.l3Risk || item.l1l2Risk);
+      if (Number.isNaN(timestamp.getTime()) || !classification) {
+        return null;
+      }
+
+      return {
+        ...item,
+        timestamp,
+        classification
+      };
+    })
+    .filter(Boolean);
+
+  const anchorDate = normalizedHistory.length
+    ? new Date(Math.max(...normalizedHistory.map((item) => item.timestamp.getTime())))
+    : new Date();
+
+  anchorDate.setHours(0, 0, 0, 0);
+
   const days = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date();
-    date.setHours(0, 0, 0, 0);
-    date.setDate(date.getDate() - (6 - index));
+    const date = new Date(anchorDate);
+    date.setDate(anchorDate.getDate() - (6 - index));
     return {
       key: date.toISOString().slice(0, 10),
       label: date.toLocaleDateString(undefined, { weekday: "short" }),
@@ -268,8 +309,8 @@ export function buildTrendBuckets(history) {
 
   const bucketMap = new Map(days.map((day) => [day.key, day]));
 
-  for (const item of history) {
-    const key = new Date(item.timestamp).toISOString().slice(0, 10);
+  for (const item of normalizedHistory) {
+    const key = item.timestamp.toISOString().slice(0, 10);
     const bucket = bucketMap.get(key);
     if (bucket && RISK_ORDER.includes(item.classification)) {
       bucket[item.classification] += 1;
@@ -277,6 +318,16 @@ export function buildTrendBuckets(history) {
   }
 
   return days;
+}
+
+function normalizeClassification(value) {
+  const normalizedValue = String(value || "").trim().toLowerCase();
+  if (!normalizedValue) return null;
+
+  if (normalizedValue === "safe") return "Safe";
+  if (normalizedValue === "suspicious") return "Suspicious";
+  if (normalizedValue === "phishing") return "Phishing";
+  return null;
 }
 
 export function getTopRiskyDomains(history, limit = 5) {
@@ -338,4 +389,125 @@ export async function buildInsights(history) {
     frequentRiskyDomains: frequentDomains,
     threatTypes: buildThreatTypes(riskyHistory)
   };
+}
+
+export async function getKnownPhishingMatch(url) {
+  const history = await getValue(STORAGE_KEYS.recentScans, []);
+  const normalizedTargetUrl = normalizeUrl(url).toLowerCase();
+  const targetDomain = getBaseDomain(url);
+
+  const exactMatch = history.find((record) => (
+    normalizeClassification(record.classification || record.l3Risk || record.l1l2Risk) === "Phishing" &&
+    normalizeUrl(record.url).toLowerCase() === normalizedTargetUrl
+  ));
+
+  if (exactMatch) {
+    return {
+      type: "url",
+      match: stripRawResult(exactMatch)
+    };
+  }
+
+  const domainMatch = history.find((record) => (
+    normalizeClassification(record.classification || record.l3Risk || record.l1l2Risk) === "Phishing" &&
+    (record.domain || getBaseDomain(record.url)) === targetDomain
+  ));
+
+  if (domainMatch) {
+    return {
+      type: "domain",
+      match: stripRawResult(domainMatch)
+    };
+  }
+
+  return null;
+}
+
+function matchesRecord(record, targetRecord) {
+  return (
+    record.id === targetRecord.id ||
+    (
+      normalizeUrl(record.url).toLowerCase() === normalizeUrl(targetRecord.url).toLowerCase() &&
+      String(record.timestamp) === String(targetRecord.timestamp) &&
+      String(record.classification || "") === String(targetRecord.classification || "")
+    )
+  );
+}
+
+export async function deleteHistoryRecord(targetRecord) {
+  await updateValue(
+    STORAGE_KEYS.recentScans,
+    async (records = []) => records.filter((record) => !matchesRecord(record, targetRecord)),
+    []
+  );
+
+  await updateValue(
+    STORAGE_KEYS.analysisLogs,
+    async (logs = []) => logs.filter((log) => (
+      !(normalizeUrl(log.url).toLowerCase() === normalizeUrl(targetRecord.url).toLowerCase() &&
+        String(log.timestamp) === String(targetRecord.timestamp))
+    )),
+    []
+  );
+
+  const user = await getSessionUser();
+  if (!user) return;
+
+  const supabase = getSupabaseClient();
+  console.info("[PhishGuard] Deleting history record from remote account history:", targetRecord.url);
+
+  const { error: historyDeleteError } = await supabase
+    .from("scan_history")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("url", targetRecord.url)
+    .eq("timestamp", targetRecord.timestamp);
+
+  if (historyDeleteError) {
+    console.warn("[PhishGuard] Remote history delete failed:", historyDeleteError.message || historyDeleteError);
+    throw historyDeleteError;
+  }
+
+  const { error: logsDeleteError } = await supabase
+    .from("scan_analysis_logs")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("url", targetRecord.url)
+    .eq("created_at", targetRecord.timestamp);
+
+  if (logsDeleteError) {
+    console.warn("[PhishGuard] Remote analysis log delete failed:", logsDeleteError.message || logsDeleteError);
+    throw logsDeleteError;
+  }
+}
+
+export async function clearHistoryRecords() {
+  await updateValue(STORAGE_KEYS.recentScans, async () => [], []);
+  await updateValue(STORAGE_KEYS.analysisLogs, async () => [], []);
+
+  const user = await getSessionUser();
+  if (!user) return;
+
+  const supabase = getSupabaseClient();
+  console.info("[PhishGuard] Clearing all remote scan history for", user.email || user.id);
+
+  const { error: historyDeleteError } = await supabase
+    .from("scan_history")
+    .delete()
+    .eq("user_id", user.id);
+
+  if (historyDeleteError) {
+    console.warn("[PhishGuard] Remote history clear failed:", historyDeleteError.message || historyDeleteError);
+    throw historyDeleteError;
+  }
+
+  const { error: logsDeleteError } = await supabase
+    .from("scan_analysis_logs")
+    .delete()
+    .eq("user_id", user.id);
+
+  if (logsDeleteError) {
+    console.warn("[PhishGuard] Remote analysis log clear failed:", logsDeleteError.message || logsDeleteError);
+    throw logsDeleteError;
+  }
 }

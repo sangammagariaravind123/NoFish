@@ -1,6 +1,6 @@
 import { DEFAULT_CONTROL_RULES, STORAGE_KEYS, TEMP_ALLOW_MINUTES } from "./constants.js";
 import { getValue, setValue } from "./storage.js";
-import { getSupabaseClient } from "./supabase-client.js";
+import { ensureSupabaseSession, getSupabaseClient } from "./supabase-client.js";
 import { getBaseDomain, makeDomainRule, matchesRule, normalizeUrl } from "./url-utils.js";
 
 function normalizeRules(state = {}) {
@@ -12,9 +12,13 @@ function normalizeRules(state = {}) {
 }
 
 async function getSessionUser() {
-  const supabase = getSupabaseClient();
-  const { data } = await supabase.auth.getSession();
-  return data.session?.user ?? null;
+  const session = await ensureSupabaseSession();
+  if (session?.user) {
+    console.info("[PhishGuard] Controls module using signed-in user", session.user.email || session.user.id);
+  } else {
+    console.info("[PhishGuard] Controls module found no signed-in session.");
+  }
+  return session?.user ?? null;
 }
 
 export async function getControlState() {
@@ -45,39 +49,59 @@ function buildRule(type, value, source = "local", remoteId = null) {
   };
 }
 
-async function syncRuleRemote(table, value) {
+async function syncRuleRemote(table, rule) {
   const user = await getSessionUser();
   if (!user) return null;
 
   const supabase = getSupabaseClient();
-  const payload = {
-    user_id: user.id,
-    domain: value,
-    created_at: new Date().toISOString()
-  };
+  const payload = table === "blocklist"
+    ? {
+      user_id: user.id,
+      domain: rule.type === "domain" ? rule.value : "",
+      rule_type: rule.type,
+      rule_value: rule.value,
+      created_at: new Date().toISOString()
+    }
+    : {
+      user_id: user.id,
+      domain: rule.value,
+      created_at: new Date().toISOString()
+    };
 
-  const { error } = await supabase.from(table).upsert(payload, { onConflict: "user_id,domain" });
+  const onConflict = table === "blocklist" ? "user_id,rule_type,rule_value" : "user_id,domain";
+  console.info("[PhishGuard] Saving remote control rule:", table, payload);
+  const { error } = await supabase.from(table).upsert(payload, { onConflict });
   if (error) throw error;
   return payload;
 }
 
-async function removeRuleRemote(table, value) {
+async function removeRuleRemote(table, rule) {
   const user = await getSessionUser();
   if (!user) return;
 
   const supabase = getSupabaseClient();
-  const { error } = await supabase
+  let query = supabase
     .from(table)
     .delete()
-    .eq("user_id", user.id)
-    .eq("domain", value);
+    .eq("user_id", user.id);
+
+  if (table === "blocklist") {
+    query = query
+      .eq("rule_type", rule.type)
+      .eq("rule_value", rule.value);
+  } else {
+    query = query.eq("domain", rule.value);
+  }
+
+  console.info("[PhishGuard] Removing remote control rule:", table, rule);
+  const { error } = await query;
 
   if (error) throw error;
 }
 
 export async function addAllowRule(type, value) {
   const controlState = await getControlState();
-  const nextRule = type === "domain" ? makeDomainRule(value) : buildRule(type, value);
+  const nextRule = type === "domain" ? makeDomainRule(value, null, "local") : buildRule(type, value);
   const nextState = {
     ...controlState,
     allowRules: [nextRule, ...controlState.allowRules.filter((rule) => !(rule.type === nextRule.type && rule.value === nextRule.value))]
@@ -86,7 +110,14 @@ export async function addAllowRule(type, value) {
   const savedState = await saveControlState(nextState);
   if (type === "domain") {
     try {
-      await syncRuleRemote("allowlist", nextRule.value);
+      await syncRuleRemote("allowlist", nextRule);
+      const currentState = await getControlState();
+      await saveControlState({
+        ...currentState,
+        allowRules: currentState.allowRules.map((rule) => (
+          rule.id === nextRule.id ? { ...rule, source: "remote" } : rule
+        ))
+      });
     } catch (error) {
       console.warn("Allowlist sync skipped:", error.message || error);
     }
@@ -96,23 +127,24 @@ export async function addAllowRule(type, value) {
 }
 
 export async function addBlockRule(type, value) {
+  const user = await getSessionUser();
   const controlState = await getControlState();
-  const nextRule = type === "domain" ? makeDomainRule(value) : buildRule(type, value);
+  const nextRule = type === "domain"
+    ? makeDomainRule(value, null, user ? "remote" : "local")
+    : buildRule(type, value, user ? "remote" : "local");
+
+  if (user) {
+    console.info("[PhishGuard] Saving block rule to account mode:", { type: nextRule.type, value: nextRule.value });
+    await syncRuleRemote("blocklist", nextRule);
+    return hydrateRemoteControlsToLocal();
+  }
+
   const nextState = {
     ...controlState,
     blockRules: [nextRule, ...controlState.blockRules.filter((rule) => !(rule.type === nextRule.type && rule.value === nextRule.value))]
   };
 
-  const savedState = await saveControlState(nextState);
-  if (type === "domain") {
-    try {
-      await syncRuleRemote("blocklist", nextRule.value);
-    } catch (error) {
-      console.warn("Blocklist sync skipped:", error.message || error);
-    }
-  }
-
-  return savedState;
+  return saveControlState(nextState);
 }
 
 export async function removeRule(kind, ruleId) {
@@ -126,9 +158,9 @@ export async function removeRule(kind, ruleId) {
   };
 
   const savedState = await saveControlState(nextState);
-  if (targetRule?.type === "domain") {
+  if (targetRule?.source === "remote" || (kind === "allow" && targetRule?.type === "domain")) {
     try {
-      await removeRuleRemote(kind === "allow" ? "allowlist" : "blocklist", targetRule.value);
+      await removeRuleRemote(kind === "allow" ? "allowlist" : "blocklist", targetRule);
     } catch (error) {
       console.warn("Remote rule removal skipped:", error.message || error);
     }
@@ -172,7 +204,7 @@ export async function hydrateRemoteControlsToLocal() {
   try {
     [allowResult, blockResult] = await Promise.all([
       supabase.from("allowlist").select("id, domain, created_at").eq("user_id", user.id).order("created_at", { ascending: false }),
-      supabase.from("blocklist").select("id, domain, created_at").eq("user_id", user.id).order("created_at", { ascending: false })
+      supabase.from("blocklist").select("id, domain, rule_type, rule_value, created_at").eq("user_id", user.id).order("created_at", { ascending: false })
     ]);
   } catch (error) {
     console.warn("Remote control hydration skipped:", error.message || error);
@@ -185,28 +217,42 @@ export async function hydrateRemoteControlsToLocal() {
   }
 
   const currentState = await getControlState();
-  const advancedAllowRules = currentState.allowRules.filter((rule) => rule.type !== "domain");
-  const advancedBlockRules = currentState.blockRules.filter((rule) => rule.type !== "domain");
+  const localAllowRules = currentState.allowRules.filter((rule) => rule.source !== "remote");
+  const localBlockRules = [];
 
   const nextState = {
     ...currentState,
-    allowRules: [
-      ...advancedAllowRules,
+    allowRules: dedupeRules([
+      ...localAllowRules,
       ...(allowResult.data || []).map((row) => ({
         ...makeDomainRule(row.domain, row.id, "remote"),
         createdAt: row.created_at || new Date().toISOString()
       }))
-    ],
-    blockRules: [
-      ...advancedBlockRules,
+    ]),
+    blockRules: dedupeRules([
+      ...localBlockRules,
       ...(blockResult.data || []).map((row) => ({
-        ...makeDomainRule(row.domain, row.id, "remote"),
+        id: row.id || crypto.randomUUID(),
+        type: row.rule_type || "domain",
+        value: String(row.rule_value || row.domain || "").trim().toLowerCase(),
+        source: "remote",
+        remoteId: row.id || null,
         createdAt: row.created_at || new Date().toISOString()
       }))
-    ]
+    ])
   };
 
   return saveControlState(nextState);
+}
+
+function dedupeRules(rules = []) {
+  const seen = new Set();
+  return rules.filter((rule) => {
+    const key = `${rule.type}:${rule.value}:${rule.source}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export async function resolveControlDecision(url) {

@@ -102,6 +102,7 @@ select {
   cursor: pointer;
   background: #2563eb;
   color: white;
+  transition: transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease, background 0.14s ease;
 }
 
 .btn.secondary {
@@ -117,6 +118,25 @@ select {
 
 .btn.danger {
   background: #dc2626;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.16);
+  filter: brightness(1.03);
+}
+
+.btn:active {
+  transform: translateY(1px) scale(0.985);
+  box-shadow: none;
+  filter: brightness(0.96);
+}
+
+.btn:disabled {
+  cursor: wait;
+  opacity: 0.72;
+  transform: none;
+  box-shadow: none;
 }
 
 .stack {
@@ -171,6 +191,42 @@ table {
   border-collapse: collapse;
 }
 
+.history-table {
+  table-layout: fixed;
+}
+
+.history-url-col {
+  width: auto;
+}
+
+.history-risk-col {
+  width: 90px;
+}
+
+.history-class-col {
+  width: 130px;
+}
+
+.history-time-col {
+  width: 170px;
+}
+
+.history-action-col {
+  width: 92px;
+}
+
+.history-url-primary,
+.history-url-secondary {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-url-primary {
+  font-weight: 600;
+}
+
 th,
 td {
   text-align: left;
@@ -185,6 +241,12 @@ tbody tr {
 
 tbody tr:hover {
   background: #f7faff;
+}
+
+.history-action-btn {
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 8px;
 }
 
 .chart-bars {
@@ -243,6 +305,38 @@ tbody tr:hover {
   border-radius: 12px;
   padding: 14px;
   border: 1px solid #dbe4f0;
+}
+
+.progress-shell {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: #e5ecf4;
+  overflow: hidden;
+  display: none;
+}
+
+.progress-shell.active {
+  display: block;
+}
+
+.progress-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 35%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #2563eb, #60a5fa);
+  animation: loading-slide 1.15s ease-in-out infinite;
+}
+
+@keyframes loading-slide {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
 }
 
 .code-block {

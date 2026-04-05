@@ -1,10 +1,30 @@
 import { getCachedAuth, registerAuthStateListener, restoreSessionContext, signInWithEmail, signInWithGoogle, signOutUser, signUpWithEmail } from "./lib/auth.js";
 import { buildExplanation, highlightSuspiciousUrl } from "./lib/explain.js";
-import { buildInsights, buildTrendBuckets, getAnalysisLog, getHistory, getTopRiskyDomains } from "./lib/history.js";
+import { buildInsights, buildTrendBuckets, clearHistoryRecords, deleteHistoryRecord, getAnalysisLog, getHistory, getTopRiskyDomains } from "./lib/history.js";
 import { openExtensionPage, safeText, formatDateTime, formatPercent, formatRiskPercent, classificationClass } from "./lib/ui-utils.js";
 
 let historyRecords = [];
 let authFormMode = null;
+let googleAuthInProgress = false;
+
+function withTimeout(promise, milliseconds, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(label)), milliseconds);
+    })
+  ]);
+}
+
+function setRefreshLoading(isLoading) {
+  const progressNode = document.getElementById("refreshProgress");
+  const refreshBtn = document.getElementById("refreshBtn");
+  if (!progressNode || !refreshBtn) return;
+
+  progressNode.classList.toggle("active", isLoading);
+  refreshBtn.disabled = isLoading;
+  refreshBtn.textContent = isLoading ? "Refreshing..." : "Refresh";
+}
 
 function setAuthMessage(message, isError = false) {
   const node = document.getElementById("dashboardAuthMessage");
@@ -33,9 +53,14 @@ async function renderAccountSummary() {
       </div>
     `;
     document.getElementById("logoutBtn").addEventListener("click", async () => {
-      await signOutUser();
-      await renderAccountSummary();
-      await refreshDashboard();
+      try {
+        await signOutUser();
+        await renderAccountSummary();
+        await refreshDashboard();
+        setAuthMessage("Signed out.");
+      } catch (error) {
+        setAuthMessage(error.message || "Logout failed.", true);
+      }
     });
     return;
   }
@@ -122,19 +147,20 @@ function renderMetrics(filteredHistory) {
 function renderHistoryTable(filteredHistory) {
   const tableBody = document.getElementById("historyTableBody");
   if (!filteredHistory.length) {
-    tableBody.innerHTML = `<tr><td colspan="4" class="muted">No scan records found for the selected filters.</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="5" class="muted">No scan records found for the selected filters.</td></tr>`;
     return;
   }
 
   tableBody.innerHTML = filteredHistory.map((record, index) => `
     <tr data-index="${index}">
       <td>
-        <div style="font-weight:600;">${safeText(record.domain || record.url)}</div>
-        <div class="muted">${safeText(record.url)}</div>
+        <span class="history-url-primary" title="${safeText(record.domain || record.url)}">${safeText(record.domain || record.url)}</span>
+        <span class="history-url-secondary muted" title="${safeText(record.url)}">${safeText(record.url)}</span>
       </td>
       <td>${formatRiskPercent(record.riskScore)}</td>
       <td><span class="pill ${classificationClass(record.classification)}">${safeText(record.classification)}</span></td>
       <td>${safeText(formatDateTime(record.timestamp))}</td>
+      <td><button class="btn ghost history-action-btn" data-delete-index="${index}">Delete</button></td>
     </tr>
   `).join("");
 
@@ -144,6 +170,22 @@ function renderHistoryTable(filteredHistory) {
       await renderDetail(record);
     });
   });
+
+  tableBody.querySelectorAll("button[data-delete-index]").forEach((button) => {
+    button.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      const record = filteredHistory[Number(button.dataset.deleteIndex)];
+      const confirmed = window.confirm(`Delete this history entry for ${record.url}?`);
+      if (!confirmed) return;
+
+      try {
+        await deleteHistoryRecord(record);
+        await refreshDashboard();
+      } catch (error) {
+        setAuthMessage(error.message || "Could not delete this history entry.", true);
+      }
+    });
+  });
 }
 
 function renderTrendChart(filteredHistory) {
@@ -151,7 +193,7 @@ function renderTrendChart(filteredHistory) {
   const buckets = buildTrendBuckets(filteredHistory);
   const totalPoints = buckets.reduce((sum, bucket) => sum + bucket.Safe + bucket.Suspicious + bucket.Phishing, 0);
   if (!totalPoints) {
-    chartNode.innerHTML = `<div class="muted">No scan history yet for the selected filters.</div>`;
+    chartNode.innerHTML = `<div class="muted">${filteredHistory.length ? "Scans were found, but there was not enough recent trend data to plot yet." : "No scan history yet for the selected filters."}</div>`;
     return;
   }
   const maxValue = Math.max(1, ...buckets.map((bucket) => bucket.Safe + bucket.Suspicious + bucket.Phishing));
@@ -256,14 +298,16 @@ async function renderDetail(record) {
 }
 
 async function refreshDashboard() {
+  setRefreshLoading(true);
   try {
-    historyRecords = await getHistory();
+    historyRecords = await withTimeout(getHistory(), 6000, "Dashboard history load timed out.");
     const filteredHistory = getFilteredHistory();
     renderMetrics(filteredHistory);
     renderHistoryTable(filteredHistory);
     renderTrendChart(filteredHistory);
     renderTopDomains(filteredHistory);
     await renderInsights(filteredHistory);
+    setAuthMessage("");
   } catch (error) {
     console.error("Dashboard refresh failed:", error);
     historyRecords = [];
@@ -273,6 +317,24 @@ async function refreshDashboard() {
     renderTopDomains([]);
     await renderInsights([]);
     setAuthMessage("Dashboard data is partially unavailable. Local features still work.", true);
+  } finally {
+    setRefreshLoading(false);
+  }
+}
+
+async function startGoogleAuth() {
+  if (googleAuthInProgress) return;
+
+  googleAuthInProgress = true;
+  try {
+    await signInWithGoogle();
+    await renderAccountSummary();
+    await refreshDashboard();
+    setAuthMessage("Logged in with Google.");
+  } catch (error) {
+    setAuthMessage(error.message || "Google sign-in failed.", true);
+  } finally {
+    googleAuthInProgress = false;
   }
 }
 
@@ -305,6 +367,18 @@ async function handleEmailAuth(mode) {
 async function initializeDashboard() {
   document.getElementById("openSettingsBtn").addEventListener("click", () => openExtensionPage("settings.html"));
   document.getElementById("refreshBtn").addEventListener("click", refreshDashboard);
+  document.getElementById("clearHistoryBtn").addEventListener("click", async () => {
+    const confirmed = window.confirm("Clear all scan history for the current mode?");
+    if (!confirmed) return;
+
+    try {
+      await clearHistoryRecords();
+      document.getElementById("detailPanel").textContent = "Select a scan record to inspect its analysis.";
+      await refreshDashboard();
+    } catch (error) {
+      setAuthMessage(error.message || "Could not clear history.", true);
+    }
+  });
   document.getElementById("classificationFilter").addEventListener("change", refreshDashboard);
   document.getElementById("recentFilter").addEventListener("change", refreshDashboard);
   document.getElementById("searchInput").addEventListener("input", refreshDashboard);
@@ -313,14 +387,7 @@ async function initializeDashboard() {
   document.getElementById("dashboardCancelAuthBtn").addEventListener("click", () => setAuthFormMode(null));
   document.getElementById("dashboardLoginBtn").addEventListener("click", () => handleEmailAuth("login"));
   document.getElementById("dashboardSignupBtn").addEventListener("click", () => handleEmailAuth("signup"));
-  document.getElementById("dashboardGoogleBtn").addEventListener("click", async () => {
-    try {
-      await signInWithGoogle();
-      setAuthMessage("Google sign-in opened in a new tab.");
-    } catch (error) {
-      setAuthMessage(error.message || "Google sign-in failed.", true);
-    }
-  });
+  document.getElementById("dashboardGoogleBtn").addEventListener("click", startGoogleAuth);
 
   registerAuthStateListener(async () => {
     await renderAccountSummary().catch((error) => {
@@ -330,9 +397,17 @@ async function initializeDashboard() {
     await refreshDashboard();
   });
 
+  await renderAccountSummary();
   await restoreSessionContext().catch((error) => console.warn("Dashboard session restore skipped:", error));
   await renderAccountSummary();
   await refreshDashboard();
+
+  const currentUrl = new URL(window.location.href);
+  if (currentUrl.searchParams.get("auth") === "google") {
+    currentUrl.searchParams.delete("auth");
+    window.history.replaceState({}, document.title, currentUrl.toString());
+    await startGoogleAuth();
+  }
 }
 
 document.addEventListener("DOMContentLoaded", () => {

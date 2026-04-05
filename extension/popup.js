@@ -1,4 +1,4 @@
-import { signInWithEmail, signInWithGoogle, signOutUser, signUpWithEmail, getCachedAuth, registerAuthStateListener, restoreSessionContext } from "./lib/auth.js";
+import { signInWithEmail, signOutUser, signUpWithEmail, getCachedAuth, registerAuthStateListener, restoreSessionContext } from "./lib/auth.js";
 import { buildExplanation, highlightSuspiciousUrl } from "./lib/explain.js";
 import { persistScanRecord } from "./lib/history.js";
 import { getUiState, setUiState } from "./lib/settings-store.js";
@@ -137,8 +137,8 @@ async function handleEmailAuth(mode) {
 
 async function handleGoogleLogin() {
   try {
-    await signInWithGoogle();
-    setAuthMessage("Google sign-in opened in a new tab.");
+    await openExtensionPage("dashboard.html?auth=google");
+    setAuthMessage("Opening Google sign-in in the dashboard tab...");
   } catch (error) {
     setAuthMessage(error.message || "Google sign-in failed.", true);
   }

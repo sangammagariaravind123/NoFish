@@ -1,7 +1,7 @@
 import { DEEP_SCAN_URL, PREDICT_URL, STORAGE_KEYS } from "./lib/constants.js";
 import { restoreSessionContext } from "./lib/auth.js";
 import { getControlState, resolveControlDecision } from "./lib/controls.js";
-import { persistScanRecord } from "./lib/history.js";
+import { getKnownPhishingMatch, persistScanRecord } from "./lib/history.js";
 import { ensureLocalSettings, getSettings } from "./lib/settings-store.js";
 import { setLocal } from "./lib/storage.js";
 
@@ -126,13 +126,31 @@ async function storeOverrideResult(url, kind, reason) {
 }
 
 async function shouldBlock(result, scanMode, settings) {
-  if (!settings.autoBlockEnabled) return false;
-
   const classification = getClassification(result, scanMode);
   const trustScore = getTrustScore(result, scanMode);
   const riskPercent = (1 - (trustScore ?? 0)) * 100;
 
-  return classification === "Phishing" || riskPercent >= settings.riskThreshold;
+  if (classification === "Phishing") {
+    return settings.autoBlockPhishing || settings.autoBlockEnabled;
+  }
+
+  if (!settings.autoBlockEnabled) return false;
+  return riskPercent >= settings.riskThreshold;
+}
+
+async function resolveKnownPhishingDecision(url, settings) {
+  if (!settings.autoBlockPhishing) return null;
+
+  const knownPhishing = await getKnownPhishingMatch(url);
+  if (!knownPhishing) return null;
+
+  const label = knownPhishing.type === "domain" ? "known phishing domain" : "known phishing URL";
+  return {
+    decision: "block",
+    reason: `Matched ${label} from scan history`,
+    source: "history",
+    match: knownPhishing.match
+  };
 }
 
 async function processNavigation(details) {
@@ -152,6 +170,13 @@ async function processNavigation(details) {
   if (decision.decision === "block") {
     await storeOverrideResult(url, "block", decision.reason);
     chrome.tabs.update(details.tabId, { url: buildWarningUrl(url, 0, decision.reason) });
+    return;
+  }
+
+  const historyDecision = await resolveKnownPhishingDecision(url, settings);
+  if (historyDecision?.decision === "block") {
+    await storeOverrideResult(url, "block", historyDecision.reason);
+    chrome.tabs.update(details.tabId, { url: buildWarningUrl(url, 0, historyDecision.reason) });
     return;
   }
 
@@ -208,4 +233,11 @@ chrome.runtime.onStartup.addListener(() => {
 
 chrome.webNavigation.onBeforeNavigate.addListener((details) => {
   processNavigation(details).catch((error) => console.error("Navigation scan failed:", error));
+});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local") return;
+  if (!changes[STORAGE_KEYS.supabaseSession]) return;
+
+  initializeExtensionState().catch((error) => console.error("Auth state refresh failed:", error));
 });

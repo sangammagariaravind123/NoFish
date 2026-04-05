@@ -1,4 +1,4 @@
-import { getCachedAuth, registerAuthStateListener, restoreSessionContext, signInWithEmail, signInWithGoogle, signOutUser, signUpWithEmail } from "./lib/auth.js";
+import { getCachedAuth, registerAuthStateListener, restoreSessionContext, signInWithEmail, signOutUser, signUpWithEmail } from "./lib/auth.js";
 import { addAllowRule, addBlockRule, clearTemporaryAllows, getControlState, removeRule } from "./lib/controls.js";
 import { applySecurityPreset, getSettings, saveSettings } from "./lib/settings-store.js";
 import { openExtensionPage, safeText, formatDateTime } from "./lib/ui-utils.js";
@@ -33,8 +33,15 @@ async function renderAccountSummary() {
       </div>
     `;
     document.getElementById("settingsLogoutBtn").addEventListener("click", async () => {
-      await signOutUser();
-      await renderAccountSummary();
+      try {
+        await signOutUser();
+        await renderAccountSummary();
+        await refreshControlLists();
+        await renderSettingsForm();
+        setAuthMessage("Signed out.");
+      } catch (error) {
+        setAuthMessage(error.message || "Logout failed.", true);
+      }
     });
     return;
   }
@@ -46,6 +53,7 @@ async function renderAccountSummary() {
 async function renderSettingsForm() {
   const settings = await getSettings();
   document.getElementById("autoBlockToggle").checked = settings.autoBlockEnabled;
+  document.getElementById("autoBlockPhishingToggle").checked = settings.autoBlockPhishing;
   document.getElementById("riskThreshold").value = settings.riskThreshold;
   document.getElementById("riskThresholdValue").textContent = `${settings.riskThreshold}%`;
   document.getElementById("scanMode").value = settings.scanMode;
@@ -71,8 +79,12 @@ function renderRuleCollection(containerId, rules, kind) {
 
   container.querySelectorAll("button[data-rule-id]").forEach((button) => {
     button.addEventListener("click", async () => {
-      await removeRule(button.dataset.kind, button.dataset.ruleId);
-      await refreshControlLists();
+      try {
+        await removeRule(button.dataset.kind, button.dataset.ruleId);
+        await refreshControlLists();
+      } catch (error) {
+        setSettingsMessage(error.message || "Could not remove the selected rule.", true);
+      }
     });
   });
 }
@@ -100,6 +112,7 @@ async function saveSettingsFromForm() {
   try {
     await saveSettings({
       autoBlockEnabled: document.getElementById("autoBlockToggle").checked,
+      autoBlockPhishing: document.getElementById("autoBlockPhishingToggle").checked,
       riskThreshold: Number(document.getElementById("riskThreshold").value),
       scanMode: document.getElementById("scanMode").value,
       securityMode: document.getElementById("securityMode").value
@@ -157,17 +170,25 @@ async function initializeSettingsPage() {
     const type = document.getElementById("allowType").value;
     const value = document.getElementById("allowValue").value.trim();
     if (!value) return;
-    await addAllowRule(type, value);
-    document.getElementById("allowValue").value = "";
-    await refreshControlLists();
+    try {
+      await addAllowRule(type, value);
+      document.getElementById("allowValue").value = "";
+      await refreshControlLists();
+    } catch (error) {
+      setSettingsMessage(error.message || "Could not save the allowlist rule.", true);
+    }
   });
   document.getElementById("addBlockBtn").addEventListener("click", async () => {
     const type = document.getElementById("blockType").value;
     const value = document.getElementById("blockValue").value.trim();
     if (!value) return;
-    await addBlockRule(type, value);
-    document.getElementById("blockValue").value = "";
-    await refreshControlLists();
+    try {
+      await addBlockRule(type, value);
+      document.getElementById("blockValue").value = "";
+      await refreshControlLists();
+    } catch (error) {
+      setSettingsMessage(error.message || "Could not save the blocklist rule.", true);
+    }
   });
   document.getElementById("clearTemporaryAllowsBtn").addEventListener("click", async () => {
     await clearTemporaryAllows();
@@ -177,8 +198,8 @@ async function initializeSettingsPage() {
   document.getElementById("settingsSignupBtn").addEventListener("click", () => handleEmailAuth("signup"));
   document.getElementById("settingsGoogleBtn").addEventListener("click", async () => {
     try {
-      await signInWithGoogle();
-      setAuthMessage("Google sign-in opened in a new tab.");
+      await openExtensionPage("dashboard.html?auth=google");
+      setAuthMessage("Opening Google sign-in in the dashboard tab...");
     } catch (error) {
       setAuthMessage(error.message || "Google sign-in failed.", true);
     }
@@ -199,6 +220,7 @@ async function initializeSettingsPage() {
     });
   });
 
+  await renderAccountSummary().catch(() => null);
   await restoreSessionContext().catch((error) => console.warn("Settings session restore skipped:", error));
   await renderAccountSummary().catch((error) => {
     console.warn("Settings account summary load skipped:", error);

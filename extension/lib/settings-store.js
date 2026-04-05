@@ -5,16 +5,27 @@ import {
   STORAGE_KEYS
 } from "./constants.js";
 import { getValue, setLocal, setValue } from "./storage.js";
-import { getSupabaseClient } from "./supabase-client.js";
+import { ensureSupabaseSession, getSupabaseClient } from "./supabase-client.js";
 
 function normalizeSettings(settings = {}) {
   return {
     ...DEFAULT_SETTINGS,
     autoBlockEnabled: settings.autoBlockEnabled ?? settings.auto_block_enabled ?? DEFAULT_SETTINGS.autoBlockEnabled,
+    autoBlockPhishing: settings.autoBlockPhishing ?? settings.auto_block_phishing ?? DEFAULT_SETTINGS.autoBlockPhishing,
     riskThreshold: Number(settings.riskThreshold ?? settings.risk_threshold ?? DEFAULT_SETTINGS.riskThreshold),
     scanMode: settings.scanMode ?? settings.scan_mode ?? DEFAULT_SETTINGS.scanMode,
     securityMode: settings.securityMode ?? settings.security_mode ?? DEFAULT_SETTINGS.securityMode
   };
+}
+
+async function getSessionUser() {
+  const session = await ensureSupabaseSession();
+  if (session?.user) {
+    console.info("[PhishGuard] Settings module using signed-in user", session.user.email || session.user.id);
+  } else {
+    console.info("[PhishGuard] Settings module found no signed-in session.");
+  }
+  return session?.user ?? null;
 }
 
 export async function ensureLocalSettings() {
@@ -72,13 +83,14 @@ export async function applySecurityPreset(mode) {
 
 export async function saveSettingsRemote(settings) {
   const supabase = getSupabaseClient();
-  const { data: sessionData } = await supabase.auth.getSession();
-  const user = sessionData.session?.user;
+  const user = await getSessionUser();
   if (!user) return null;
 
+  console.info("[PhishGuard] Saving settings to account mode for", user.email || user.id);
   const payload = {
     user_id: user.id,
     auto_block_enabled: settings.autoBlockEnabled,
+    auto_block_phishing: settings.autoBlockPhishing,
     risk_threshold: settings.riskThreshold,
     scan_mode: settings.scanMode,
     security_mode: settings.securityMode,
@@ -89,14 +101,16 @@ export async function saveSettingsRemote(settings) {
     onConflict: "user_id"
   });
 
-  if (error) throw error;
+  if (error) {
+    console.warn("[PhishGuard] Remote settings save failed:", error.message || error);
+    throw error;
+  }
   return payload;
 }
 
 export async function hydrateRemoteSettingsToLocal() {
   const supabase = getSupabaseClient();
-  const { data: sessionData } = await supabase.auth.getSession();
-  const user = sessionData.session?.user;
+  const user = await getSessionUser();
   if (!user) {
     return getSettings();
   }
@@ -107,7 +121,10 @@ export async function hydrateRemoteSettingsToLocal() {
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (error) throw error;
+  if (error) {
+    console.warn("[PhishGuard] Remote settings load failed:", error.message || error);
+    throw error;
+  }
 
   if (!data) {
     return saveSettings(DEFAULT_SETTINGS);
