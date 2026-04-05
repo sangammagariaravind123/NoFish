@@ -5,7 +5,7 @@ from tqdm import tqdm
 df = pd.read_csv("urls_labeled.csv")
 
 # test first
-df = df.head(200)
+df = df.head(4000)
 
 results = []
 total = len(df)
