@@ -4,10 +4,11 @@
   <meta charset="UTF-8">
   <style>
     body {
-      width: 320px;
+      width: 360px;
       padding: 15px;
       font-family: sans-serif;
       box-sizing: border-box;
+      background: #f6f8fb;
     }
 
     * {
@@ -15,7 +16,20 @@
     }
 
     h3 {
-      margin-top: 0;
+      margin: 0;
+    }
+
+    .header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 6px;
     }
 
     .risk {
@@ -125,15 +139,128 @@
     .small-text {
       font-size: 0.85rem;
     }
+
+    .stack {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 10px;
+      padding: 12px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.06);
+      margin-bottom: 10px;
+    }
+
+    .auth-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .auth-row input {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid #d3dce6;
+    }
+
+    .secondary-btn {
+      background: #1d4ed8;
+    }
+
+    .ghost-btn {
+      background: #e2e8f0;
+      color: #1f2937;
+    }
+
+    .compact-btn {
+      margin-top: 0;
+      width: auto;
+      font-size: 12px;
+      padding: 6px 10px;
+    }
+
+    .message {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #2563eb;
+    }
+
+    .message.error {
+      color: #b91c1c;
+    }
+
+    .auth-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #64748b;
+    }
+
+    .auth-email {
+      font-weight: bold;
+      margin-top: 4px;
+    }
+
+    .detail-block {
+      margin-top: 8px;
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+
+    .detail-block.compact {
+      background: #f8fafc;
+      padding: 8px;
+      border-radius: 6px;
+    }
+
+    mark {
+      background: #fde68a;
+      padding: 0 2px;
+    }
   </style>
 </head>
 <body>
-  <h3>PhishGuard</h3>
-  <div id="result">Loading...</div>
-  <button id="deepScanBtn">🔍 Deep Scan (Sandbox)</button>
-  <div id="loading" class="loading">Analyzing in sandbox... please wait ~10 seconds</div>
-  <button id="whyBtn" class="why-btn" style="display:none;">❓ Show Why</button>
-  <div id="explanationBox" class="explanation-box"></div>
-  <script src="popup.js"></script>
+  <div class="header-row">
+    <h3>PhishGuard</h3>
+    <div class="header-actions">
+      <button id="dashboardBtn" class="ghost-btn compact-btn">Dashboard</button>
+      <button id="settingsBtn" class="ghost-btn compact-btn">Settings</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div id="accountState"></div>
+    <div id="authActions" class="auth-row"></div>
+    <div id="authForm" class="stack" style="display:none;">
+      <div id="authFormTitle" class="auth-label"></div>
+      <div class="auth-row">
+        <input id="displayNameInput" type="text" placeholder="Display name (optional)">
+        <input id="emailInput" type="email" placeholder="Email">
+        <input id="passwordInput" type="password" placeholder="Password">
+      </div>
+      <div class="auth-row">
+        <button id="loginBtn" class="secondary-btn">Login</button>
+        <button id="signupBtn">Sign Up</button>
+        <button id="cancelAuthBtn" class="ghost-btn">Cancel</button>
+      </div>
+    </div>
+    <div id="authMessage" class="message"></div>
+  </div>
+
+  <div class="card">
+    <div id="result">Loading...</div>
+    <button id="deepScanBtn">Deep Scan (Sandbox)</button>
+    <div id="loading" class="loading">Analyzing in sandbox... please wait ~10 seconds</div>
+    <div class="auth-row">
+      <button id="whyBtn" class="why-btn" style="display:none;">Show Why</button>
+      <button id="explainModeBtn" class="ghost-btn">Mode: Simple</button>
+    </div>
+    <div id="explanationBox" class="explanation-box"></div>
+  </div>
+  <script type="module" src="popup.js"></script>
 </body>
 </html>
