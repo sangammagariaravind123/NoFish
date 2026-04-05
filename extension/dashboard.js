@@ -328,9 +328,7 @@ async function startGoogleAuth() {
   googleAuthInProgress = true;
   try {
     await signInWithGoogle();
-    await renderAccountSummary();
-    await refreshDashboard();
-    setAuthMessage("Logged in with Google.");
+    setAuthMessage("Continue Google sign-in in the opened tab.");
   } catch (error) {
     setAuthMessage(error.message || "Google sign-in failed.", true);
   } finally {

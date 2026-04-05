@@ -197,11 +197,10 @@ export async function signInWithEmail(email, password) {
 
 export async function signInWithGoogle() {
   const supabase = getSupabaseClient();
-  const redirectTo = chrome.identity.getRedirectURL("supabase-callback");
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo,
+      redirectTo: getAuthRedirectUrl(),
       queryParams: {
         prompt: "select_account"
       },
@@ -211,22 +210,8 @@ export async function signInWithGoogle() {
 
   if (error) throw error;
   if (!data?.url) throw new Error("Supabase did not return a Google sign-in URL.");
-
-  const responseUrl = await chrome.identity.launchWebAuthFlow({
-    url: data.url,
-    interactive: true
-  });
-
-  if (!responseUrl) {
-    throw new Error("Google sign-in did not return a callback URL.");
-  }
-
-  const session = await exchangeCodeForSession(responseUrl);
-  if (!session) {
-    throw new Error("Google sign-in did not produce a session.");
-  }
-
-  return session;
+  await chrome.tabs.create({ url: data.url });
+  return null;
 }
 
 export async function exchangeCodeForSession(urlString) {
