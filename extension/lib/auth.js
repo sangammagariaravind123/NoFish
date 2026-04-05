@@ -2,8 +2,8 @@ import { getAuthRedirectUrl } from "./config.js";
 import { DEFAULT_CONTROL_RULES, DEFAULT_SETTINGS, STORAGE_KEYS } from "./constants.js";
 import { hydrateRemoteControlsToLocal } from "./controls.js";
 import { hydrateRemoteSettingsToLocal } from "./settings-store.js";
-import { getValue, setLocal, setValue } from "./storage.js";
-import { getSupabaseClient } from "./supabase-client.js";
+import { getValue, removeLocal, setLocal, setValue } from "./storage.js";
+import { ensureSupabaseSession, getSupabaseClient } from "./supabase-client.js";
 
 async function cacheSessionMetadata(session) {
   if (!session?.user) {
@@ -87,6 +87,7 @@ async function bootstrapUser(user) {
       const { error: settingsInsertError } = await supabase.from("user_settings").insert({
         user_id: user.id,
         auto_block_enabled: DEFAULT_SETTINGS.autoBlockEnabled,
+        auto_block_phishing: DEFAULT_SETTINGS.autoBlockPhishing,
         risk_threshold: DEFAULT_SETTINGS.riskThreshold,
         scan_mode: DEFAULT_SETTINGS.scanMode,
         security_mode: DEFAULT_SETTINGS.securityMode,
@@ -126,10 +127,7 @@ async function clearUserScopedCaches() {
 }
 
 export async function getSession() {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw error;
-  return data.session;
+  return ensureSupabaseSession();
 }
 
 export async function restoreSessionContext() {
@@ -151,12 +149,13 @@ export async function getCachedAuth() {
 
 export async function signUpWithEmail(email, password, displayName) {
   const supabase = getSupabaseClient();
+  const normalizedDisplayName = String(displayName || "").trim() || email.split("@")[0];
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
       data: {
-        display_name: displayName || email.split("@")[0]
+        display_name: normalizedDisplayName
       },
       emailRedirectTo: getAuthRedirectUrl()
     }
@@ -167,6 +166,20 @@ export async function signUpWithEmail(email, password, displayName) {
   if (data.session?.user) {
     await cacheSessionMetadata(data.session);
     await bootstrapUser(data.session.user);
+  } else if (data.user) {
+    await runBootstrapTask(async () => {
+      const { error: profileError } = await supabase.from("profiles").upsert(
+        {
+          id: data.user.id,
+          email: data.user.email,
+          display_name: normalizedDisplayName,
+          created_at: new Date().toISOString()
+        },
+        { onConflict: "id" }
+      );
+
+      if (profileError) throw profileError;
+    }, ["profiles"], "signup profile bootstrap");
   }
 
   return data;
@@ -184,10 +197,11 @@ export async function signInWithEmail(email, password) {
 
 export async function signInWithGoogle() {
   const supabase = getSupabaseClient();
+  const redirectTo = chrome.identity.getRedirectURL("supabase-callback");
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: getAuthRedirectUrl(),
+      redirectTo,
       queryParams: {
         prompt: "select_account"
       },
@@ -197,8 +211,22 @@ export async function signInWithGoogle() {
 
   if (error) throw error;
   if (!data?.url) throw new Error("Supabase did not return a Google sign-in URL.");
-  await chrome.tabs.create({ url: data.url });
-  return data;
+
+  const responseUrl = await chrome.identity.launchWebAuthFlow({
+    url: data.url,
+    interactive: true
+  });
+
+  if (!responseUrl) {
+    throw new Error("Google sign-in did not return a callback URL.");
+  }
+
+  const session = await exchangeCodeForSession(responseUrl);
+  if (!session) {
+    throw new Error("Google sign-in did not produce a session.");
+  }
+
+  return session;
 }
 
 export async function exchangeCodeForSession(urlString) {
@@ -241,22 +269,36 @@ export async function exchangeCodeForSession(urlString) {
 
 export async function signOutUser() {
   const supabase = getSupabaseClient();
-  const { error } = await supabase.auth.signOut();
-  if (error) throw error;
+  await removeLocal(STORAGE_KEYS.supabaseSession);
+  try {
+    const { error } = await supabase.auth.signOut({ scope: "local" });
+    if (error) {
+      console.warn("Supabase sign-out warning:", error.message || error);
+    }
+  } catch (error) {
+    console.warn("Supabase sign-out threw an error, continuing with local cleanup:", error.message || error);
+  }
   await clearUserScopedCaches();
 }
 
 export function registerAuthStateListener(callback) {
   const supabase = getSupabaseClient();
-  return supabase.auth.onAuthStateChange(async (_event, session) => {
-    if (session?.user) {
-      await cacheSessionMetadata(session);
-      await bootstrapUser(session.user);
-    } else {
-      await clearUserScopedCaches();
-    }
-    if (callback) {
-      callback(session);
-    }
+  return supabase.auth.onAuthStateChange((_event, session) => {
+    setTimeout(async () => {
+      try {
+        if (session?.user) {
+          await cacheSessionMetadata(session);
+          await bootstrapUser(session.user);
+        } else {
+          await clearUserScopedCaches();
+        }
+
+        if (callback) {
+          callback(session);
+        }
+      } catch (error) {
+        console.warn("Auth state listener update skipped:", error.message || error);
+      }
+    }, 0);
   });
 }

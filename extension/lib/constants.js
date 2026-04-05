@@ -20,6 +20,7 @@ export const STORAGE_KEYS = {
 
 export const DEFAULT_SETTINGS = {
   autoBlockEnabled: true,
+  autoBlockPhishing: true,
   riskThreshold: 60,
   scanMode: "fast",
   securityMode: "balanced"
@@ -32,16 +33,19 @@ export const DEFAULT_UI_STATE = {
 export const SECURITY_MODE_PRESETS = {
   strict: {
     autoBlockEnabled: true,
+    autoBlockPhishing: true,
     riskThreshold: 40,
     scanMode: "deep"
   },
   balanced: {
     autoBlockEnabled: true,
+    autoBlockPhishing: true,
     riskThreshold: 60,
     scanMode: "fast"
   },
   relaxed: {
     autoBlockEnabled: false,
+    autoBlockPhishing: false,
     riskThreshold: 80,
     scanMode: "fast"
   }

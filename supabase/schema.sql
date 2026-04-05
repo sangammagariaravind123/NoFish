@@ -32,11 +32,14 @@ create table if not exists public.scan_analysis_logs (
 create table if not exists public.user_settings (
   user_id uuid primary key references auth.users (id) on delete cascade,
   auto_block_enabled boolean not null default true,
+  auto_block_phishing boolean not null default true,
   risk_threshold integer not null default 60,
   scan_mode text not null default 'fast',
   security_mode text not null default 'balanced',
   updated_at timestamptz not null default now()
 );
+
+alter table public.user_settings add column if not exists auto_block_phishing boolean not null default true;
 
 create table if not exists public.allowlist (
   id uuid primary key default gen_random_uuid(),
@@ -50,9 +53,16 @@ create table if not exists public.blocklist (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
   domain text not null,
-  created_at timestamptz not null default now(),
-  unique (user_id, domain)
+  rule_type text not null default 'domain',
+  rule_value text,
+  created_at timestamptz not null default now()
 );
+
+alter table public.blocklist add column if not exists rule_type text not null default 'domain';
+alter table public.blocklist add column if not exists rule_value text;
+update public.blocklist set rule_value = coalesce(rule_value, domain);
+alter table public.blocklist drop constraint if exists blocklist_user_id_domain_key;
+create unique index if not exists blocklist_user_rule_unique on public.blocklist (user_id, rule_type, rule_value);
 
 create table if not exists public.weekly_summaries (
   id uuid primary key default gen_random_uuid(),

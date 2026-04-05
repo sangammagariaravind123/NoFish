@@ -50,6 +50,9 @@
           <label><input id="autoBlockToggle" type="checkbox"> Auto-block risky pages</label>
         </div>
         <div class="field">
+          <label><input id="autoBlockPhishingToggle" type="checkbox"> Auto-block phishing sites</label>
+        </div>
+        <div class="field">
           <label for="riskThreshold">Risk threshold <span id="riskThresholdValue"></span></label>
           <input id="riskThreshold" type="range" min="10" max="95" step="5">
         </div>
@@ -85,9 +88,10 @@
     <div class="grid grid-2">
       <div class="card stack">
         <h2>Allowlist</h2>
+        <div class="muted">Trusted entries always override blocking. Domain rules sync when you are signed in. Exact URL rules stay local to this browser.</div>
         <div class="inline">
           <select id="allowType">
-            <option value="domain">Domain</option>
+            <option value="domain">Domain (syncs in account mode)</option>
             <option value="url">Exact URL (local only)</option>
           </select>
           <input id="allowValue" type="text" placeholder="example.com or https://example.com/login" style="flex:1;">
@@ -98,11 +102,12 @@
 
       <div class="card stack">
         <h2>Blocklist</h2>
+        <div class="muted">Local mode stores every block rule in this browser only. Signed-in mode stores every block rule in your account and mirrors it here as cache.</div>
         <div class="inline">
           <select id="blockType">
             <option value="domain">Domain</option>
             <option value="url">Exact URL</option>
-            <option value="suffix">Domain suffix (e.g. .xyz)</option>
+            <option value="suffix">Domain suffix</option>
             <option value="keyword">Keyword in URL</option>
           </select>
           <input id="blockValue" type="text" placeholder="Enter a rule value" style="flex:1;">

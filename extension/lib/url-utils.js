@@ -60,7 +60,7 @@ export function matchesRule(url, rule) {
   }
 }
 
-export function makeDomainRule(value, remoteId = null, source = "remote") {
+export function makeDomainRule(value, remoteId = null, source = "local") {
   return {
     id: remoteId || crypto.randomUUID(),
     type: "domain",

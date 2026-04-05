@@ -17,6 +17,16 @@ const authStorage = {
 };
 
 let supabaseClient;
+let sessionHydrationPromise = null;
+
+function isLockContentionError(error) {
+  const message = String(error?.message || error || "");
+  return message.includes('Lock "lock:phishguard.supabase.session"');
+}
+
+function waitFor(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
 
 export function getSupabaseClient() {
   if (!supabaseClient) {
@@ -38,4 +48,33 @@ export function getSupabaseClient() {
   }
 
   return supabaseClient;
+}
+
+export async function ensureSupabaseSession() {
+  if (sessionHydrationPromise) {
+    return sessionHydrationPromise;
+  }
+
+  const supabase = getSupabaseClient();
+  sessionHydrationPromise = (async () => {
+    try {
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        const { data, error } = await supabase.auth.getSession();
+        if (error && !isLockContentionError(error)) throw error;
+        if (data?.session) {
+          return data.session;
+        }
+
+        if (attempt < 5) {
+          await waitFor(120);
+        }
+      }
+
+      return null;
+    } finally {
+      sessionHydrationPromise = null;
+    }
+  })();
+
+  return sessionHydrationPromise;
 }
