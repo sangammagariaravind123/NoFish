@@ -27,14 +27,17 @@ ARTIFACT_PATHS = [
     os.path.join(PROJECT_ROOT, "api", "behavior_transformer.pt"),
 ]
 
-EPOCHS = 40
-BATCH_SIZE = 32
-LEARNING_RATE = 1e-3
-WEIGHT_DECAY = 1e-4
+EPOCHS = 30
+BATCH_SIZE = 64
+LEARNING_RATE = 8e-4
+WEIGHT_DECAY = 5e-4
 RANDOM_STATE = 42
 
 
-def standardize(train_array: np.ndarray, eval_array: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def standardize(
+    train_array: np.ndarray,
+    eval_array: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     mean = train_array.mean(axis=0)
     std = train_array.std(axis=0)
     std[std < 1e-6] = 1.0
@@ -88,17 +91,26 @@ def evaluate(model, dataloader, device):
 
 def main():
     features, labels = load_behavioral_dataset(DATASET_PATH)
-    X_train, X_test, y_train, y_test = train_test_split(
+    X_train_val, X_test, y_train_val, y_test = train_test_split(
         features.to_numpy(),
         labels.to_numpy(),
         test_size=0.2,
         random_state=RANDOM_STATE,
         stratify=labels.to_numpy(),
     )
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_train_val,
+        y_train_val,
+        test_size=0.2,
+        random_state=RANDOM_STATE,
+        stratify=y_train_val,
+    )
 
-    X_train_scaled, X_test_scaled, mean, std = standardize(X_train, X_test)
+    X_train_scaled, X_val_scaled, mean, std = standardize(X_train, X_val)
+    X_test_scaled = (X_test - mean) / std
 
     train_loader = build_dataloader(X_train_scaled, y_train, batch_size=BATCH_SIZE, shuffle=True)
+    val_loader = build_dataloader(X_val_scaled, y_val, batch_size=BATCH_SIZE, shuffle=False)
     test_loader = build_dataloader(X_test_scaled, y_test, batch_size=BATCH_SIZE, shuffle=False)
 
     config = BehavioralTransformerConfig()
@@ -113,41 +125,46 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
     best_state = None
-    best_auc = -1.0
+    best_val_auc = -1.0
 
     print(f"Training behavioral Transformer on {len(features)} samples")
-    print(f"Train size: {len(X_train)} | Test size: {len(X_test)} | Device: {device}")
+    print(
+        f"Train size: {len(X_train)} | Val size: {len(X_val)} | "
+        f"Test size: {len(X_test)} | Device: {device}"
+    )
 
     for epoch in range(1, EPOCHS + 1):
         train_loss = train_epoch(model, train_loader, loss_fn, optimizer, device)
-        metrics = evaluate(model, test_loader, device)
+        val_metrics = evaluate(model, val_loader, device)
 
-        if metrics["roc_auc"] > best_auc:
-            best_auc = metrics["roc_auc"]
+        if val_metrics["roc_auc"] > best_val_auc:
+            best_val_auc = val_metrics["roc_auc"]
             best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
 
         print(
             f"Epoch {epoch:02d}/{EPOCHS} | "
             f"train_loss={train_loss:.4f} | "
-            f"test_acc={metrics['accuracy']:.4f} | "
-            f"test_auc={metrics['roc_auc']:.4f}"
+            f"val_acc={val_metrics['accuracy']:.4f} | "
+            f"val_auc={val_metrics['roc_auc']:.4f}"
         )
 
     if best_state is not None:
         model.load_state_dict(best_state)
 
     final_metrics = evaluate(model, test_loader, device)
-    print("\nFinal accuracy:", round(final_metrics["accuracy"], 4))
-    print("Final ROC-AUC:", round(final_metrics["roc_auc"], 4))
+    print("\nFinal test accuracy:", round(final_metrics["accuracy"], 4))
+    print("Final test ROC-AUC:", round(final_metrics["roc_auc"], 4))
     print("\nClassification report:\n")
     print(final_metrics["report"])
 
     metadata = {
         "train_size": int(len(X_train)),
+        "val_size": int(len(X_val)),
         "test_size": int(len(X_test)),
         "accuracy": float(final_metrics["accuracy"]),
         "roc_auc": float(final_metrics["roc_auc"]),
         "epochs": EPOCHS,
+        "notes": "log1p count preprocessing + CLS transformer encoder + dense residual branch",
     }
 
     model = model.cpu()

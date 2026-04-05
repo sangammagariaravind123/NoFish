@@ -32,6 +32,25 @@ FEATURE_COLUMNS = [
     "other_requests",
 ]
 
+COUNT_FEATURE_COLUMNS = [
+    "total_requests",
+    "external_domain_count",
+    "redirect_count",
+    "js_requests",
+    "ip_based_requests",
+    "suspicious_tld_count",
+    "download_attempts",
+    "unique_request_domains",
+    "script_domain_count",
+    "document_requests",
+    "script_requests",
+    "stylesheet_requests",
+    "image_requests",
+    "font_requests",
+    "xhr_fetch_requests",
+    "other_requests",
+]
+
 
 @dataclass
 class BehavioralTransformerConfig:
@@ -39,6 +58,8 @@ class BehavioralTransformerConfig:
     nhead: int = 4
     num_layers: int = 2
     dim_feedforward: int = 128
+    dense_hidden: int = 64
+    dense_out: int = 32
     dropout: float = 0.1
 
 
@@ -46,8 +67,13 @@ class BehavioralTransformer(nn.Module):
     def __init__(self, num_features: int, config: BehavioralTransformerConfig):
         super().__init__()
         self.num_features = num_features
-        self.value_projection = nn.Linear(1, config.d_model)
-        self.feature_embedding = nn.Embedding(num_features, config.d_model)
+        self.value_projection = nn.Sequential(
+            nn.Linear(1, config.d_model),
+            nn.GELU(),
+            nn.LayerNorm(config.d_model),
+        )
+        self.feature_embedding = nn.Embedding(num_features + 1, config.d_model)
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, config.d_model))
 
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=config.d_model,
@@ -58,24 +84,41 @@ class BehavioralTransformer(nn.Module):
             activation="gelu",
         )
         self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=config.num_layers)
-        self.norm = nn.LayerNorm(config.d_model)
-        self.classifier = nn.Sequential(
-            nn.Linear(config.d_model, config.d_model // 2),
+        self.cls_norm = nn.LayerNorm(config.d_model)
+
+        self.dense_branch = nn.Sequential(
+            nn.Linear(num_features, config.dense_hidden),
             nn.GELU(),
             nn.Dropout(config.dropout),
-            nn.Linear(config.d_model // 2, 1),
+            nn.Linear(config.dense_hidden, config.dense_out),
+            nn.GELU(),
         )
 
-        feature_ids = torch.arange(num_features, dtype=torch.long)
+        fused_dim = config.d_model + config.dense_out
+        self.fusion_norm = nn.LayerNorm(fused_dim)
+        self.classifier = nn.Sequential(
+            nn.Linear(fused_dim, 32),
+            nn.GELU(),
+            nn.Dropout(config.dropout),
+            nn.Linear(32, 1),
+        )
+
+        feature_ids = torch.arange(1, num_features + 1, dtype=torch.long)
         self.register_buffer("feature_ids", feature_ids, persistent=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        tokens = x.unsqueeze(-1)
-        tokens = self.value_projection(tokens)
+        tokens = self.value_projection(x.unsqueeze(-1))
         tokens = tokens + self.feature_embedding(self.feature_ids).unsqueeze(0)
-        encoded = self.encoder(tokens)
-        pooled = self.norm(encoded.mean(dim=1))
-        return self.classifier(pooled).squeeze(-1)
+
+        cls_token = self.cls_token.expand(x.size(0), -1, -1)
+        cls_token = cls_token + self.feature_embedding.weight[0].view(1, 1, -1)
+
+        encoded = self.encoder(torch.cat([cls_token, tokens], dim=1))
+        cls_out = self.cls_norm(encoded[:, 0, :])
+        dense_out = self.dense_branch(x)
+        fused = self.fusion_norm(torch.cat([cls_out, dense_out], dim=1))
+
+        return self.classifier(fused).squeeze(-1)
 
 
 class BehavioralPredictor:
@@ -84,6 +127,11 @@ class BehavioralPredictor:
         artifact = torch.load(artifact_path, map_location=map_location)
 
         self.feature_columns = artifact["feature_columns"]
+        self.preprocessing = artifact.get(
+            "preprocessing",
+            {"log1p_columns": COUNT_FEATURE_COLUMNS},
+        )
+
         config = BehavioralTransformerConfig(**artifact["config"])
         self.model = BehavioralTransformer(len(self.feature_columns), config)
         self.model.load_state_dict(artifact["state_dict"])
@@ -95,7 +143,7 @@ class BehavioralPredictor:
         self.feature_std = np.array(artifact["feature_std"], dtype=np.float32)
         self.metadata = artifact.get("metadata", {})
 
-    def _prepare_array(self, features: pd.DataFrame | dict) -> np.ndarray:
+    def _prepare_frame(self, features: pd.DataFrame | dict) -> pd.DataFrame:
         if isinstance(features, dict):
             frame = pd.DataFrame([features])
         else:
@@ -105,7 +153,19 @@ class BehavioralPredictor:
             if column not in frame:
                 frame[column] = 0.0
 
-        values = frame[self.feature_columns].astype("float32").to_numpy()
+        return frame[self.feature_columns].copy()
+
+    def _apply_preprocessing(self, frame: pd.DataFrame) -> pd.DataFrame:
+        transformed = frame.copy()
+        for column in self.preprocessing.get("log1p_columns", []):
+            if column in transformed.columns:
+                transformed[column] = np.log1p(transformed[column].clip(lower=0))
+        return transformed
+
+    def _prepare_array(self, features: pd.DataFrame | dict) -> np.ndarray:
+        frame = self._prepare_frame(features)
+        frame = self._apply_preprocessing(frame)
+        values = frame.astype("float32").to_numpy()
         return (values - self.feature_mean) / self.feature_std
 
     def predict_proba(self, features: pd.DataFrame | dict) -> np.ndarray:
@@ -119,6 +179,14 @@ class BehavioralPredictor:
         return probabilities
 
 
+def preprocess_behavioral_features(features: pd.DataFrame) -> pd.DataFrame:
+    transformed = features.copy()
+    for column in COUNT_FEATURE_COLUMNS:
+        if column in transformed.columns:
+            transformed[column] = np.log1p(transformed[column].clip(lower=0))
+    return transformed
+
+
 def load_behavioral_dataset(csv_path: str) -> tuple[pd.DataFrame, pd.Series]:
     df = pd.read_csv(csv_path)
 
@@ -130,6 +198,7 @@ def load_behavioral_dataset(csv_path: str) -> tuple[pd.DataFrame, pd.Series]:
         raise ValueError("Dataset must contain a 'label' column.")
 
     features = df[FEATURE_COLUMNS].astype("float32")
+    features = preprocess_behavioral_features(features)
     labels = df["label"].astype("int64")
     return features, labels
 
@@ -157,11 +226,16 @@ def save_behavioral_artifact(
             "nhead": config.nhead,
             "num_layers": config.num_layers,
             "dim_feedforward": config.dim_feedforward,
+            "dense_hidden": config.dense_hidden,
+            "dense_out": config.dense_out,
             "dropout": config.dropout,
         },
         "feature_columns": FEATURE_COLUMNS,
         "feature_mean": feature_mean.astype(np.float32).tolist(),
         "feature_std": feature_std.astype(np.float32).tolist(),
+        "preprocessing": {
+            "log1p_columns": COUNT_FEATURE_COLUMNS,
+        },
         "metadata": metadata,
     }
 
