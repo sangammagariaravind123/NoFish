@@ -1,0 +1,14 @@
+{
+  "name": "phishguard-extension",
+  "private": true,
+  "scripts": {
+    "build": "npm run build:vendor",
+    "build:vendor": "esbuild extension/lib/supabase-entry.js --bundle --format=esm --platform=browser --outfile=extension/vendor/supabase.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.8"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.3"
+  }
+}

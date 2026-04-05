@@ -5,32 +5,39 @@
   <title>Phishing Warning</title>
   <style>
     body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
       text-align: center;
-      margin-top: 80px;
+      margin: 0;
+      padding: 48px 16px;
       background-color: #f8f9fa;
       color: #333;
     }
+
     .danger {
       color: #dc3545;
       font-size: 4rem;
       margin-bottom: 20px;
     }
+
     h1 {
       color: #dc3545;
+      margin-top: 0;
     }
+
     .box {
       background: white;
       border-radius: 10px;
       padding: 30px;
-      max-width: 500px;
+      max-width: 560px;
       margin: 0 auto;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
     }
+
     .trust {
-      font-size: 1.2rem;
+      font-size: 1.1rem;
       margin: 20px 0;
     }
+
     button {
       padding: 12px 24px;
       margin: 10px;
@@ -39,20 +46,25 @@
       border-radius: 5px;
       cursor: pointer;
     }
+
     #back {
       background-color: #6c757d;
       color: white;
     }
+
     #proceed {
       background-color: #28a745;
       color: white;
     }
+
     #proceed:hover {
       background-color: #218838;
     }
+
     #back:hover {
       background-color: #5a6268;
     }
+
     .reason {
       background-color: #f8d7da;
       border-left: 4px solid #dc3545;
@@ -60,35 +72,27 @@
       margin: 20px 0;
       text-align: left;
     }
+
+    .hint {
+      color: #6b7280;
+      font-size: 0.95rem;
+      margin-top: 8px;
+    }
   </style>
 </head>
 <body>
-<div class="box">
-  <div class="danger">⚠️</div>
-  <h1>This site may be phishing!</h1>
-  <div class="trust">
-    <strong>Trust Index:</strong> <span id="trust"></span><br>
-    <strong>Risk:</strong> Phishing
+  <div class="box">
+    <div class="danger">⚠️</div>
+    <h1>This site may be phishing!</h1>
+    <div class="trust">
+      <strong>Trust Index:</strong> <span id="trust"></span><br>
+      <strong>Risk:</strong> Phishing
+    </div>
+    <div class="reason" id="reason"></div>
+    <div class="hint">Proceeding will temporarily allow this exact URL for 10 minutes.</div>
+    <button id="back">Go Back</button>
+    <button id="proceed">Proceed Anyway</button>
   </div>
-  <div class="reason" id="reason"></div>
-  <button id="back">Go Back</button>
-  <button id="proceed">Proceed Anyway</button>
-</div>
-<script>
-  const urlParams = new URLSearchParams(window.location.search);
-  const originalUrl = urlParams.get('url');
-  const trust = urlParams.get('trust');
-  const reason = urlParams.get('reason');
-
-  document.getElementById('trust').innerText = trust;
-  if (reason) {
-    document.getElementById('reason').innerHTML = `<strong>Why:</strong> ${reason}`;
-  } else {
-    document.getElementById('reason').style.display = 'none';
-  }
-
-  document.getElementById('back').onclick = () => history.back();
-  document.getElementById('proceed').onclick = () => window.location.href = originalUrl;
-</script>
+  <script type="module" src="warning.js"></script>
 </body>
 </html>

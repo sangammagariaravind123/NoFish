@@ -1,59 +1,227 @@
-const DEEP_SCAN_EXPIRY = 5 * 60 * 1000; // 5 minutes
+import { signInWithEmail, signInWithGoogle, signOutUser, signUpWithEmail, getCachedAuth, registerAuthStateListener, restoreSessionContext } from "./lib/auth.js";
+import { buildExplanation, highlightSuspiciousUrl } from "./lib/explain.js";
+import { persistScanRecord } from "./lib/history.js";
+import { getUiState, setUiState } from "./lib/settings-store.js";
+import { getLocal, setLocal } from "./lib/storage.js";
+import { classificationClass, formatPercent, openExtensionPage, safeText } from "./lib/ui-utils.js";
 
-function safeText(value) {
-  if (value === null || value === undefined) return "N/A";
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
+const DEEP_SCAN_EXPIRY = 5 * 60 * 1000;
+let authFormMode = null;
 
 function formatList(items, emptyText = "None") {
   if (!items || !items.length) return emptyText;
-  return items.map(item => `• ${safeText(item)}`).join("<br>");
+  return items.map((item) => `• ${safeText(item)}`).join("<br>");
 }
 
 function buildRequestList(requests) {
   if (!requests || !requests.length) {
     return `
-      <button id="toggleRequestsBtn" class="nested-btn">📄 Show All Requests</button>
+      <button id="toggleRequestsBtn" class="nested-btn">Show All Requests</button>
       <div id="allRequestsContainer" class="request-list">
         <div class="small-text">No requests captured.</div>
       </div>
     `;
   }
 
-  const listItems = requests.map(req => `<li>${safeText(req)}</li>`).join("");
-
+  const listItems = requests.map((req) => `<li>${safeText(req)}</li>`).join("");
   return `
-    <button id="toggleRequestsBtn" class="nested-btn">📄 Show All Requests</button>
-    <ol id="allRequestsContainer" class="request-list">
-      ${listItems}
-    </ol>
+    <button id="toggleRequestsBtn" class="nested-btn">Show All Requests</button>
+    <ol id="allRequestsContainer" class="request-list">${listItems}</ol>
   `;
 }
 
 function attachNestedRequestToggle() {
   const toggleBtn = document.getElementById("toggleRequestsBtn");
   const reqBox = document.getElementById("allRequestsContainer");
-
   if (!toggleBtn || !reqBox) return;
 
   toggleBtn.onclick = () => {
-    if (reqBox.style.display === "none" || reqBox.style.display === "") {
-      reqBox.style.display = "block";
-      toggleBtn.textContent = "📄 Hide All Requests";
-    } else {
-      reqBox.style.display = "none";
-      toggleBtn.textContent = "📄 Show All Requests";
-    }
+    const visible = reqBox.style.display === "block";
+    reqBox.style.display = visible ? "none" : "block";
+    toggleBtn.textContent = visible ? "Show All Requests" : "Hide All Requests";
   };
 }
 
-// Display either normal L1+L2 result or deep scan result
-function displayResult(result, isDeepScan = false) {
+async function renderAuthState() {
+  const auth = await getCachedAuth();
+  const accountCard = document.getElementById("accountState");
+  const authForm = document.getElementById("authForm");
+  const authActions = document.getElementById("authActions");
+
+  if (auth?.email) {
+    setAuthFormMode(null);
+    accountCard.innerHTML = `
+      <div class="auth-label">Signed in as</div>
+      <div class="auth-email">${safeText(auth.email)}</div>
+      <div class="small-text">${safeText(auth.provider || "email")} account</div>
+    `;
+    authForm.style.display = "none";
+    authActions.innerHTML = `<button id="logoutBtn" class="secondary-btn">Log Out</button>`;
+    document.getElementById("logoutBtn").addEventListener("click", async () => {
+      await signOutUser();
+      await renderAuthState();
+      setAuthMessage("Signed out.");
+    });
+    return;
+  }
+
+  setAuthFormMode(null);
+  accountCard.innerHTML = `
+    <div class="auth-label">Local mode</div>
+    <div class="small-text">Sign in to sync history, settings, and control lists across devices.</div>
+  `;
+  authForm.style.display = "none";
+  authActions.innerHTML = `
+    <button id="showLoginBtn" class="secondary-btn">Login</button>
+    <button id="showSignupBtn">Sign Up</button>
+    <button id="googleLoginBtn" class="ghost-btn">Continue with Google</button>
+  `;
+  document.getElementById("showLoginBtn").addEventListener("click", () => setAuthFormMode("login"));
+  document.getElementById("showSignupBtn").addEventListener("click", () => setAuthFormMode("signup"));
+  document.getElementById("googleLoginBtn").addEventListener("click", handleGoogleLogin);
+}
+
+function setAuthFormMode(mode) {
+  authFormMode = mode;
+  const form = document.getElementById("authForm");
+  const title = document.getElementById("authFormTitle");
+  const displayNameInput = document.getElementById("displayNameInput");
+  const loginBtn = document.getElementById("loginBtn");
+  const signupBtn = document.getElementById("signupBtn");
+  const cancelBtn = document.getElementById("cancelAuthBtn");
+
+  if (!mode) {
+    form.style.display = "none";
+    title.textContent = "";
+    return;
+  }
+
+  form.style.display = "flex";
+  title.textContent = mode === "signup" ? "Create your account" : "Log in to your account";
+  displayNameInput.style.display = mode === "signup" ? "block" : "none";
+  loginBtn.style.display = mode === "login" ? "block" : "none";
+  signupBtn.style.display = mode === "signup" ? "block" : "none";
+  cancelBtn.style.display = "block";
+}
+
+function setAuthMessage(message, isError = false) {
+  const box = document.getElementById("authMessage");
+  box.textContent = message || "";
+  box.className = isError ? "message error" : "message";
+}
+
+async function handleEmailAuth(mode) {
+  const email = document.getElementById("emailInput").value.trim();
+  const password = document.getElementById("passwordInput").value.trim();
+  const displayName = document.getElementById("displayNameInput").value.trim();
+
+  if (!email || !password) {
+    setAuthMessage("Email and password are required.", true);
+    return;
+  }
+
+  try {
+    if (mode === "signup") {
+      await signUpWithEmail(email, password, displayName);
+      setAuthMessage("Account created successfully.");
+    } else {
+      await signInWithEmail(email, password);
+      setAuthMessage("Logged in successfully.");
+    }
+    setAuthFormMode(null);
+    await renderAuthState();
+  } catch (error) {
+    setAuthMessage(error.message || "Authentication failed.", true);
+  }
+}
+
+async function handleGoogleLogin() {
+  try {
+    await signInWithGoogle();
+    setAuthMessage("Google sign-in opened in a new tab.");
+  } catch (error) {
+    setAuthMessage(error.message || "Google sign-in failed.", true);
+  }
+}
+
+function buildSimpleExplainSection(result, isDeepScan) {
+  const explanation = buildExplanation(result, isDeepScan);
+  const url = isDeepScan ? result.scanned_url : result.url;
+  return `
+    <div class="detail-block">
+      <strong>Why this may be risky</strong><br>
+      ${explanation.why.map((item) => `• ${safeText(item)}`).join("<br>")}
+    </div>
+    <div class="detail-block">
+      <strong>What might happen if you proceed</strong><br>
+      ${explanation.impact.map((item) => `• ${safeText(item)}`).join("<br>")}
+    </div>
+    ${url ? `
+      <div class="detail-block">
+        <strong>Suspicious URL parts</strong><br>
+        <span class="url-line">${highlightSuspiciousUrl(url)}</span>
+      </div>` : ""}
+  `;
+}
+
+async function renderExplanationBox(result, isDeepScan) {
+  const explanationBox = document.getElementById("explanationBox");
+  const uiState = await getUiState();
+  const mode = uiState.explainMode;
+  const modeBtn = document.getElementById("explainModeBtn");
+  modeBtn.textContent = `Mode: ${mode === "simple" ? "Simple" : "Technical"}`;
+
+  if (!isDeepScan) {
+    explanationBox.innerHTML = buildSimpleExplainSection(result, false);
+    return;
+  }
+
+  const raw = result.sandbox?.raw_output || {};
+  const downloadList = (raw.download_attempts || []).map(
+    (item) => `${item.suggested_filename || "unknown"} (${item.url || "no url"})`
+  );
+
+  if (mode === "simple") {
+    explanationBox.innerHTML = `
+      ${buildSimpleExplainSection(result, true)}
+      <div class="detail-block">
+        <strong>Decision breakdown</strong><br>
+        • ML score: ${formatPercent(result.l1l2?.ml_prob ?? null)}<br>
+        • Rule score: ${formatPercent(result.l1l2?.rule_score ?? null)}<br>
+        • Sandbox score: ${formatPercent(result.sandbox?.behavioral_prob ?? null)}
+      </div>
+    `;
+    return;
+  }
+
+  explanationBox.innerHTML = `
+    ${buildSimpleExplainSection(result, true)}
+    <strong>Sandbox Output</strong><br><br>
+    <strong>Original URL:</strong>
+    <span class="url-line">${safeText(raw.url || "N/A")}</span>
+    <strong>Final URL:</strong>
+    <span class="url-line">${safeText(raw.final_url || "N/A")}</span>
+    <strong>Behavior Summary</strong><br>
+    • Total requests: ${raw.total_requests ?? "N/A"}<br>
+    • External domain count: ${raw.external_domain_count ?? "N/A"}<br>
+    • Redirect count: ${raw.redirect_count ?? "N/A"}<br>
+    • JavaScript requests: ${raw.js_requests ?? "N/A"}<br>
+    • Download attempts: ${(raw.download_attempts || []).length}<br><br>
+    <strong>Advanced Signals</strong><br>
+    • Final URL differs: ${raw.final_url_differs ?? "N/A"}<br>
+    • Unique request domains: ${raw.unique_request_domains ?? "N/A"}<br>
+    • External request ratio: ${raw.external_request_ratio ?? "N/A"}<br>
+    • Error flag: ${raw.error_flag ?? "N/A"}<br>
+    • Timeout flag: ${raw.timeout_flag ?? "N/A"}<br><br>
+    <strong>External Domains Contacted</strong><br>
+    ${formatList(raw.external_domains || [])}<br><br>
+    <strong>Download Attempt Details</strong><br>
+    ${formatList(downloadList, "None")}<br><br>
+    ${buildRequestList(raw.all_requests || [])}
+  `;
+}
+
+async function displayResult(result, isDeepScan = false) {
   const container = document.getElementById("result");
   const whyBtn = document.getElementById("whyBtn");
   const explanationBox = document.getElementById("explanationBox");
@@ -68,137 +236,64 @@ function displayResult(result, isDeepScan = false) {
   if (isDeepScan) {
     const risk = result.final_risk || "Unknown";
     const trustIndex = result.final_trust_index ?? 0;
-    const riskClass = risk.toLowerCase();
-
     const l1l2 = result.l1l2 || {};
-    const mlProb = l1l2.ml_prob ?? 0;
-    const ruleScore = l1l2.rule_score ?? 0;
-    const triggeredRules = l1l2.triggered_rules || [];
-
-    const sandboxProb = result.sandbox?.behavioral_prob;
-    const raw = result.sandbox?.raw_output || {};
 
     container.innerHTML = `
-      <div class="risk ${riskClass}">Risk: <strong>${safeText(risk)}</strong></div>
+      <div class="risk ${classificationClass(risk)}">Risk: <strong>${safeText(risk)}</strong></div>
       <div class="trust">Trust Index: ${(trustIndex * 100).toFixed(1)}%</div>
-      <div class="rules"><strong>Rules triggered:</strong> ${triggeredRules.length ? safeText(triggeredRules.join(", ")) : "None"}</div>
+      <div class="rules"><strong>Rules triggered:</strong> ${l1l2.triggered_rules?.length ? safeText(l1l2.triggered_rules.join(", ")) : "None"}</div>
       <hr>
-      <div><small>ML probability: ${(mlProb * 100).toFixed(1)}%</small></div>
-      <div><small>Rule score: ${(ruleScore * 100).toFixed(1)}%</small></div>
-      <div><small>Sandbox behavioral probability: ${
-        sandboxProb !== undefined ? (sandboxProb * 100).toFixed(1) : "N/A"
-      }%</small></div>
-      <hr>
-      <div class="rules"><strong>Scanned URL:</strong></div>
-      <span class="url-line">${safeText(result.scanned_url || "N/A")}</span>
-      <div class="rules"><strong>Final URL:</strong></div>
-      <span class="url-line">${safeText(raw.final_url || "N/A")}</span>
-    `;
-
-    const downloadList = (raw.download_attempts || []).map(
-      d => `${d.suggested_filename || "unknown"} (${d.url || "no url"})`
-    );
-
-    explanationBox.innerHTML = `
-      <strong>🔬 Sandbox Output</strong><br><br>
-
-      <strong>Original URL:</strong>
-      <span class="url-line">${safeText(raw.url || "N/A")}</span>
-
-      <strong>Final URL:</strong>
-      <span class="url-line">${safeText(raw.final_url || "N/A")}</span>
-
-      <strong>Behavior Summary</strong><br>
-      • Total requests: ${raw.total_requests ?? "N/A"}<br>
-      • External domain count: ${raw.external_domain_count ?? "N/A"}<br>
-      • Redirect count: ${raw.redirect_count ?? "N/A"}<br>
-      • JavaScript requests: ${raw.js_requests ?? "N/A"}<br>
-      • IP-based requests: ${raw.ip_based_requests ?? "N/A"}<br>
-      • Suspicious TLD count: ${raw.suspicious_tld_count ?? "N/A"}<br>
-      • Download attempts: ${(raw.download_attempts || []).length}<br><br>
-
-      <strong>Advanced Signals</strong><br>
-      • Final URL differs: ${raw.final_url_differs ?? "N/A"}<br>
-      • Unique request domains: ${raw.unique_request_domains ?? "N/A"}<br>
-      • Domain diversity ratio: ${raw.unique_request_domain_ratio ?? "N/A"}<br>
-      • Script domain count: ${raw.script_domain_count ?? "N/A"}<br>
-      • External request ratio: ${raw.external_request_ratio ?? "N/A"}<br>
-      • Error flag: ${raw.error_flag ?? "N/A"}<br>
-      • Timeout flag: ${raw.timeout_flag ?? "N/A"}<br><br>
-
-      <strong>Request Type Breakdown</strong><br>
-      • Document: ${raw.document_requests ?? "N/A"}<br>
-      • Script: ${raw.script_requests ?? "N/A"}<br>
-      • Stylesheet: ${raw.stylesheet_requests ?? "N/A"}<br>
-      • Image: ${raw.image_requests ?? "N/A"}<br>
-      • Font: ${raw.font_requests ?? "N/A"}<br>
-      • XHR/Fetch: ${raw.xhr_fetch_requests ?? "N/A"}<br>
-      • Other: ${raw.other_requests ?? "N/A"}<br><br>
-
-      <strong>External Domains Contacted</strong><br>
-      ${formatList(raw.external_domains || [])}<br><br>
-
-      <strong>Download Attempt Details</strong><br>
-      ${formatList(downloadList, "None")}<br><br>
-
-      ${buildRequestList(raw.all_requests || [])}
+      <div><small>ML probability: ${(l1l2.ml_prob * 100 || 0).toFixed(1)}%</small></div>
+      <div><small>Rule score: ${(l1l2.rule_score * 100 || 0).toFixed(1)}%</small></div>
+      <div><small>Sandbox score: ${(result.sandbox?.behavioral_prob * 100 || 0).toFixed(1)}%</small></div>
+      <div class="small-text">Scanned URL: ${safeText(result.scanned_url || "N/A")}</div>
     `;
 
     whyBtn.style.display = "block";
-    whyBtn.textContent = "❓ Show Why";
+    whyBtn.textContent = "Show Why";
     explanationBox.style.display = "none";
-  } else {
-    let riskClass = "";
-    let trustIndex = result.trust_index ?? 0;
-    let risk = result.risk || "Unknown";
-    let triggeredRules = result.triggered_rules || [];
-    let mlProb = result.ml_prob ?? 0;
-    let ruleScore = result.rule_score ?? 0;
-
-    riskClass = risk.toLowerCase();
-    const trustPercent = (trustIndex * 100).toFixed(1);
-
-    let rulesHtml = "";
-    if (triggeredRules && triggeredRules.length) {
-      rulesHtml = `<div class="rules"><strong>Rules triggered:</strong> ${safeText(triggeredRules.join(", "))}</div>`;
-    }
-
-    container.innerHTML = `
-      <div class="risk ${riskClass}">Risk: <strong>${safeText(risk)}</strong></div>
-      <div class="trust">Trust Index: ${trustPercent}%</div>
-      ${rulesHtml}
-      <hr>
-      <div><small>ML probability: ${(mlProb * 100).toFixed(1)}%</small></div>
-      <div><small>Rule score: ${(ruleScore * 100).toFixed(1)}%</small></div>
-    `;
-
-    whyBtn.style.display = "none";
-    explanationBox.style.display = "none";
+    await renderExplanationBox(result, true);
+    return;
   }
+
+  container.innerHTML = `
+    <div class="risk ${classificationClass(result.risk)}">Risk: <strong>${safeText(result.risk || "Unknown")}</strong></div>
+    <div class="trust">Trust Index: ${((result.trust_index ?? 0) * 100).toFixed(1)}%</div>
+    <div class="rules"><strong>Rules triggered:</strong> ${result.triggered_rules?.length ? safeText(result.triggered_rules.join(", ")) : "None"}</div>
+    <hr>
+    <div><small>ML probability: ${((result.ml_prob ?? 0) * 100).toFixed(1)}%</small></div>
+    <div><small>Rule score: ${((result.rule_score ?? 0) * 100).toFixed(1)}%</small></div>
+    <div class="detail-block compact">${buildSimpleExplainSection(result, false)}</div>
+  `;
+  whyBtn.style.display = "none";
+  explanationBox.style.display = "none";
 }
 
-// Toggle explanation box visibility
 function toggleExplanation() {
   const box = document.getElementById("explanationBox");
   const btn = document.getElementById("whyBtn");
+  const visible = box.style.display === "block";
+  box.style.display = visible ? "none" : "block";
+  btn.textContent = visible ? "Show Why" : "Hide Why";
+  attachNestedRequestToggle();
+}
 
-  if (box.style.display === "none" || box.style.display === "") {
-    box.style.display = "block";
-    btn.textContent = "❓ Hide Why";
-    attachNestedRequestToggle();
-  } else {
-    box.style.display = "none";
-    btn.textContent = "❓ Show Why";
+async function toggleExplainMode() {
+  const currentState = await getUiState();
+  const nextMode = currentState.explainMode === "simple" ? "technical" : "simple";
+  await setUiState({ explainMode: nextMode });
+
+  const { deepScanResult } = await getLocal(["deepScanResult"]);
+  if (deepScanResult?.result) {
+    await renderExplanationBox(deepScanResult.result, true);
   }
 }
 
-// Get the current tab URL
 async function getCurrentTabUrl() {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   return tabs[0]?.url;
 }
 
-// Get correct deep scan URL, even from warning page
 async function getUrlForDeepScan() {
   const currentUrl = await getCurrentTabUrl();
   if (!currentUrl) return null;
@@ -208,7 +303,7 @@ async function getUrlForDeepScan() {
       const parsed = new URL(currentUrl);
       const originalUrl = parsed.searchParams.get("url");
       return originalUrl || currentUrl;
-    } catch (e) {
+    } catch (error) {
       return currentUrl;
     }
   }
@@ -216,7 +311,6 @@ async function getUrlForDeepScan() {
   return currentUrl;
 }
 
-// Perform deep scan and update everything
 async function runDeepScan() {
   const loadingDiv = document.getElementById("loading");
   const btn = document.getElementById("deepScanBtn");
@@ -229,7 +323,6 @@ async function runDeepScan() {
   whyBtn.style.display = "none";
 
   const url = await getUrlForDeepScan();
-
   if (!url) {
     loadingDiv.style.display = "none";
     btn.disabled = false;
@@ -241,30 +334,20 @@ async function runDeepScan() {
     const response = await fetch("http://localhost:8000/deep_scan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: url })
+      body: JSON.stringify({ url })
     });
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
     const deepResult = await response.json();
 
-    if (deepResult.final_risk === "Phishing") {
-      chrome.action.setIcon({ path: "icons/danger.png" });
-    } else if (deepResult.final_risk === "Suspicious") {
-      chrome.action.setIcon({ path: "icons/warning.png" });
-    } else {
-      chrome.action.setIcon({ path: "icons/safe.png" });
-    }
-
     const deepScanStore = {
-      url: url,
+      url,
       result: deepResult,
       timestamp: Date.now()
     };
-    await chrome.storage.local.set({ deepScanResult: deepScanStore });
 
-    // keep L1+L2 metrics visible after deep scan
-    await chrome.storage.local.set({
+    await setLocal({
+      deepScanResult: deepScanStore,
       lastResult: {
         risk: deepResult.final_risk,
         trust_index: deepResult.final_trust_index,
@@ -274,11 +357,17 @@ async function runDeepScan() {
       }
     });
 
-    displayResult(deepResult, true);
+    await persistScanRecord({
+      url,
+      result: deepResult,
+      scanType: "deep",
+      source: "popup"
+    }).catch((error) => console.warn("Deep scan persistence failed:", error));
+
+    await displayResult(deepResult, true);
   } catch (error) {
     console.error("Deep scan error:", error);
-    document.getElementById("result").innerHTML =
-      `<p>Deep scan failed. Is the API running?<br>${safeText(error.message)}</p>`;
+    document.getElementById("result").innerHTML = `<p>Deep scan failed.<br>${safeText(error.message)}</p>`;
     document.getElementById("whyBtn").style.display = "none";
   } finally {
     loadingDiv.style.display = "none";
@@ -286,33 +375,44 @@ async function runDeepScan() {
   }
 }
 
-// On popup load, decide what to show
-document.addEventListener("DOMContentLoaded", () => {
-  chrome.storage.local.get(["deepScanResult", "lastResult"], async (data) => {
-    const currentUrl = await getUrlForDeepScan();
+async function initializePopup() {
+  await restoreSessionContext().catch((error) => console.warn("Popup session restore skipped:", error));
+  await renderAuthState();
 
-    if (!currentUrl) {
-      document.getElementById("result").innerHTML = "<p>Unable to get current tab URL.</p>";
-      return;
-    }
+  const currentUrl = await getUrlForDeepScan();
+  const data = await getLocal(["deepScanResult", "lastResult"]);
 
-    const deepScanStore = data.deepScanResult;
-    if (
-      deepScanStore &&
-      deepScanStore.url === currentUrl &&
-      (Date.now() - deepScanStore.timestamp) < DEEP_SCAN_EXPIRY
-    ) {
-      displayResult(deepScanStore.result, true);
-    } else {
-      const lastResult = data.lastResult;
-      if (lastResult) {
-        displayResult(lastResult, false);
-      } else {
-        document.getElementById("result").innerHTML = "<p>No recent scan.</p>";
-      }
-    }
-  });
+  if (!currentUrl) {
+    document.getElementById("result").innerHTML = "<p>Unable to get current tab URL.</p>";
+  } else if (
+    data.deepScanResult &&
+    data.deepScanResult.url === currentUrl &&
+    Date.now() - data.deepScanResult.timestamp < DEEP_SCAN_EXPIRY
+  ) {
+    await displayResult(data.deepScanResult.result, true);
+  } else if (data.lastResult) {
+    await displayResult(data.lastResult, false);
+  } else {
+    document.getElementById("result").innerHTML = "<p>No recent scan.</p>";
+  }
 
   document.getElementById("deepScanBtn").addEventListener("click", runDeepScan);
   document.getElementById("whyBtn").addEventListener("click", toggleExplanation);
+  document.getElementById("explainModeBtn").addEventListener("click", toggleExplainMode);
+  document.getElementById("cancelAuthBtn").addEventListener("click", () => setAuthFormMode(null));
+  document.getElementById("loginBtn").addEventListener("click", () => handleEmailAuth("login"));
+  document.getElementById("signupBtn").addEventListener("click", () => handleEmailAuth("signup"));
+  document.getElementById("dashboardBtn").addEventListener("click", () => openExtensionPage("dashboard.html"));
+  document.getElementById("settingsBtn").addEventListener("click", () => openExtensionPage("settings.html"));
+
+  registerAuthStateListener(() => {
+    renderAuthState().catch((error) => setAuthMessage(error.message, true));
+  });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  initializePopup().catch((error) => {
+    console.error("Popup init failed:", error);
+    setAuthMessage(error.message || "Failed to initialize popup.", true);
+  });
 });
