@@ -166,7 +166,9 @@ def extract_12(url):
     features["ip"] = 1 if re.match(r"\d+\.\d+\.\d+\.\d+", hostname) else 0
 
     # 7. phish_hints
-    features["phish_hints"] = sum(1 for word in PHISH_KEYWORDS if word in url.lower())
+    features["phish_hints"] = sum(
+        1 for word in PHISHING_KEYWORDS if word in url.lower()
+    )
 
     # ------------------------
     # Fetch webpage (optional)
