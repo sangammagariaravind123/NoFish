@@ -1,3 +1,4 @@
+import datetime
 import re
 import tldextract
 import urllib.parse
@@ -7,9 +8,24 @@ import pandas as pd
 import whois
 from collections import Counter
 from bs4 import BeautifulSoup
+import requests
+from urllib.parse import urlparse
+from playwright.sync_api import sync_playwright  # pyright: ignore[reportMissingImports]
 
 
 def extract_all_features(url):
+    with sync_playwright() as p:
+
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context()
+        page = context.new_page()
+
+        page.goto(url, wait_until="load")
+
+        base_domain = urlparse(url).netloc
+        features = {}
+
+        # 👉 ADD FEATURES HERE
     """
     Extract all 87 features from a single URL
 
@@ -351,10 +367,32 @@ def extract_all_features(url):
     features["phish_hints"] = 1 if any(k in full_url for k in phishing_keywords) else 0
 
     # 72. Google index (placeholder - requires API call)
-    features["google_index"] = 0
+    try:
+        endpoint = "https://api.bing.microsoft.com/v7.0/search"
+        headers = {"Ocp-Apim-Subscription-Key": BING_API_KEY}
+        params = {"q": f"site:{url}", "count": 1}
+
+        response = requests.get(endpoint, headers=headers, params=params, timeout=5)
+        data = response.json()
+
+        if "webPages" in data and data["webPages"]["value"]:
+            gi = 1
+        gi = 0
+    except:
+        gi = 0
+    features["google_index"] = gi
 
     # 73. Page rank (placeholder - requires API call)
-    features["page_rank"] = 0
+    domain = urlparse(url).netloc
+
+    # simple heuristic
+    if any(x in domain for x in ["google", "facebook", "amazon"]):
+        prr = 5
+    elif "." in domain and len(domain) > 10:
+        prr = 2
+    else:
+        prr = 1
+    features["page_rank"] = prr
 
     try:
         response = requests.get(url, timeout=5)
@@ -385,11 +423,31 @@ def extract_all_features(url):
         features["ratio_intHyperlinks"] = 0
         features["domain_in_title"] = 0
 
-    # 75. Has external links (placeholder)
-    features["external_links"] = 0
+    # 75. Number of external links
 
-    # 76. Has iframe (placeholder)
-    features["iframe"] = 0
+    try:
+        links = page.query_selector_all("a[href]")
+        external_links = 0
+
+        for link in links:
+            href = link.get_attribute("href")
+            if href and base_domain not in href:
+                external_links += 1
+
+        features["external_links"] = external_links
+
+    except:
+        features["external_links"] = 0
+
+    # 76. Presence of iframe
+
+    try:
+        iframes = page.query_selector_all("iframe")
+        features["iframe"] = 1 if len(iframes) > 0 else 0
+
+    except:
+        features["iframe"] = 0
+        features["iframe"] = 0
 
     # ============== 8. Statistical Features (11 features) ==============
 
@@ -497,3 +555,49 @@ if __name__ == "__main__":
 
     # Save to CSV if needed
     # df_features.to_csv("extracted_features.csv", index=False)
+
+import requests
+
+
+def check_google_index(url):
+    try:
+        query = f"https://www.google.com/search?q=site:{url}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        res = requests.get(query, headers=headers, timeout=5)
+
+        if "did not match any documents" in res.text:
+            return 0
+        return 1
+    except:
+        return 0
+
+
+BING_API_KEY = "YOUR_KEY"
+
+
+def check_index_bing(url):
+    try:
+        endpoint = "https://api.bing.microsoft.com/v7.0/search"
+        headers = {"Ocp-Apim-Subscription-Key": BING_API_KEY}
+        params = {"q": f"site:{url}", "count": 1}
+
+        response = requests.get(endpoint, headers=headers, params=params, timeout=5)
+        data = response.json()
+
+        if "webPages" in data and data["webPages"]["value"]:
+            return 1
+        return 0
+    except:
+        return 0
+
+
+def count_external_links(page, base_domain):
+    links = page.query_selector_all("a[href]")
+    count = 0
+
+    for link in links:
+        href = link.get_attribute("href")
+        if href and base_domain not in href:
+            count += 1
+
+    return count
