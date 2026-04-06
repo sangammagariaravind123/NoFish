@@ -12,6 +12,9 @@ from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 
 from sandbox import analyze_url
+from behavioral_transformer import BehavioralPredictor
+from extract_features import extract_basic_features
+
 
 API_DIR = os.path.dirname(__file__)
 PROJECT_ROOT = os.path.dirname(API_DIR)
@@ -34,9 +37,41 @@ behavioral_model = BehavioralPredictor(project_path("api", "behavior_transformer
 minilm_model = SentenceTransformer("all-MiniLM-L6-v2")
 
 # --- Rule engine (same as in your app) ---
-SUSPICIOUS_TLDS = ["tk", "ml", "ga", "cf", "gq", "xyz", "top", "club", "work", "zip", "link", "cn"]
-PHISHING_KEYWORDS = ["login", "verify", "update", "secure", "account", "bank", "payment", "signin", "confirm"]
-URL_SHORTENERS = ["bit.ly", "tinyurl", "goo.gl", "t.co", "is.gd", "buff.ly", "adf.ly", "shorturl"]
+SUSPICIOUS_TLDS = [
+    "tk",
+    "ml",
+    "ga",
+    "cf",
+    "gq",
+    "xyz",
+    "top",
+    "club",
+    "work",
+    "zip",
+    "link",
+    "cn",
+]
+PHISHING_KEYWORDS = [
+    "login",
+    "verify",
+    "update",
+    "secure",
+    "account",
+    "bank",
+    "payment",
+    "signin",
+    "confirm",
+]
+URL_SHORTENERS = [
+    "bit.ly",
+    "tinyurl",
+    "goo.gl",
+    "t.co",
+    "is.gd",
+    "buff.ly",
+    "adf.ly",
+    "shorturl",
+]
 
 
 def compute_rule_score(url):
@@ -101,7 +136,9 @@ def predict_url(url):
     }
 
 
-app = FastAPI(title="PhishGuard API", description="URL phishing detection", version="1.0")
+app = FastAPI(
+    title="PhishGuard API", description="URL phishing detection", version="1.0"
+)
 
 
 class URLRequest(BaseModel):
@@ -132,7 +169,9 @@ async def deep_scan(request: URLRequest):
             "download_attempts": len(sandbox_result.get("download_attempts", [])),
             "final_url_differs": sandbox_result.get("final_url_differs", 0),
             "unique_request_domains": sandbox_result.get("unique_request_domains", 0),
-            "unique_request_domain_ratio": sandbox_result.get("unique_request_domain_ratio", 0),
+            "unique_request_domain_ratio": sandbox_result.get(
+                "unique_request_domain_ratio", 0
+            ),
             "script_domain_count": sandbox_result.get("script_domain_count", 0),
             "external_request_ratio": sandbox_result.get("external_request_ratio", 0),
             "error_flag": sandbox_result.get("error_flag", 0),
@@ -181,4 +220,6 @@ async def deep_scan(request: URLRequest):
 
 @app.get("/")
 async def root():
-    return {"message": "PhishGuard API is running. Use POST /predict with JSON { 'url': '...' }"}
+    return {
+        "message": "PhishGuard API is running. Use POST /predict with JSON { 'url': '...' }"
+    }
