@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Sign-in Complete</title>
+  <link rel="stylesheet" href="styles/shared.css">
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+
+    .callback-card {
+      max-width: 460px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="card callback-card">
+    <h2>Finishing sign-in...</h2>
+    <p id="callbackMessage" class="muted">Please wait while we connect your account.</p>
+    <div class="inline" style="justify-content:center; margin-top:16px;">
+      <button id="openDashboardBtn" class="btn secondary" style="display:none;">Open Dashboard</button>
+    </div>
+  </div>
+  <script type="module" src="auth-callback.js"></script>
+</body>
+</html>

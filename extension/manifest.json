@@ -4,15 +4,18 @@
   "version": "1.0",
   "description": "Real‑time phishing URL detection using hybrid AI",
   "permissions": [
+    "identity",
     "webNavigation",
     "storage",
     "tabs"
   ],
   "host_permissions": [
-    "http://localhost:8000/*"
+    "http://localhost:8000/*",
+    "https://wyefsxtndxbcdzybuzog.supabase.co/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "action": {
     "default_popup": "popup.html",
@@ -22,13 +25,25 @@
       "128": "icons/icon128.png"
     }
   },
+  "options_page": "settings.html",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "web_accessible_resources": [{
-    "resources": ["warning/warning.html"],
-    "matches": ["<all_urls>"]
-  }]
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "auth-callback.html",
+        "auth-callback.js",
+        "warning/*",
+        "styles/*.css",
+        "lib/*.js",
+        "vendor/*.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
 }

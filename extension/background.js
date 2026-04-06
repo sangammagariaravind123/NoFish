@@ -1,75 +1,253 @@
-// background.js
+import { DEEP_SCAN_URL, PREDICT_URL, STORAGE_KEYS } from "./lib/constants.js";
+import { restoreSessionContext } from "./lib/auth.js";
+import { getControlState, resolveControlDecision } from "./lib/controls.js";
+import { getKnownPhishingMatch, persistScanRecord } from "./lib/history.js";
+import { ensureLocalSettings, getSettings } from "./lib/settings-store.js";
+import { setLocal } from "./lib/storage.js";
 
-const API_URL = "http://localhost:8000/predict";
+const cache = new Map();
 
-// Cache results to avoid repeated calls for same URL
-let cache = new Map();
-
-// Update toolbar icon based on risk level
 function updateIcon(risk) {
-  let iconPath = "";
+  let iconPath = "icons/safe.png";
   if (risk === "Phishing") iconPath = "icons/danger.png";
   else if (risk === "Suspicious") iconPath = "icons/warning.png";
-  else iconPath = "icons/safe.png";
-
   chrome.action.setIcon({ path: iconPath });
 }
 
-// Check a URL by calling the API
-async function checkUrl(url) {
-  // Check cache first
-  if (cache.has(url)) {
-    return cache.get(url);
+function isSkippableUrl(url) {
+  return !url ||
+    url.startsWith("chrome://") ||
+    url.startsWith("about:") ||
+    url.startsWith("edge://") ||
+    url.startsWith("chrome-extension://");
+}
+
+function buildWarningUrl(url, trust, reason) {
+  return chrome.runtime.getURL("warning/warning.html") +
+    `?url=${encodeURIComponent(url)}&trust=${encodeURIComponent(String(trust ?? 0))}&reason=${encodeURIComponent(reason || "")}`;
+}
+
+function getScanMode(settings) {
+  return settings.scanMode === "deep" ? "deep" : "fast";
+}
+
+function getCacheKey(url, scanMode) {
+  return `${scanMode}:${url}`;
+}
+
+function getClassification(result, scanMode) {
+  return scanMode === "deep" ? result.final_risk : result.risk;
+}
+
+function getTrustScore(result, scanMode) {
+  return scanMode === "deep" ? result.final_trust_index : result.trust_index;
+}
+
+function summarizeDeepResult(result) {
+  return {
+    risk: result.final_risk,
+    trust_index: result.final_trust_index,
+    ml_prob: result.l1l2?.ml_prob ?? 0,
+    rule_score: result.l1l2?.rule_score ?? 0,
+    triggered_rules: result.l1l2?.triggered_rules ?? []
+  };
+}
+
+function buildPopupResultRecord(url, result, scanMode, source = "scan") {
+  return {
+    url,
+    scanMode,
+    source,
+    timestamp: Date.now(),
+    result
+  };
+}
+
+async function requestScan(url, settings) {
+  const scanMode = getScanMode(settings);
+  const cacheKey = getCacheKey(url, scanMode);
+  if (cache.has(cacheKey)) {
+    return { scanMode, result: cache.get(cacheKey) };
   }
 
-  try {
-    const response = await fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: url })
+  const endpoint = scanMode === "deep" ? DEEP_SCAN_URL : PREDICT_URL;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url })
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  const result = await response.json();
+  cache.set(cacheKey, result);
+
+  if (cache.size > 100) {
+    const oldestKey = cache.keys().next().value;
+    cache.delete(oldestKey);
+  }
+
+  return { scanMode, result };
+}
+
+async function storeResultForPopup(url, scanMode, result) {
+  const payload = {};
+
+  if (scanMode === "deep") {
+    payload[STORAGE_KEYS.deepScanResult] = {
+      url,
+      result,
+      timestamp: Date.now()
+    };
+  } else {
+    payload[STORAGE_KEYS.lastResult] = buildPopupResultRecord(url, result, scanMode, "scan");
+  }
+
+  await setLocal(payload);
+}
+
+async function storeOverrideResult(url, kind, reason) {
+  if (kind === "allow") {
+    await setLocal({
+      [STORAGE_KEYS.lastResult]: buildPopupResultRecord(url, {
+        risk: "Safe",
+        trust_index: 1,
+        ml_prob: 0,
+        rule_score: 0,
+        triggered_rules: [reason]
+      }, "fast", "override")
     });
+    updateIcon("Safe");
+    return;
+  }
 
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
+  await setLocal({
+    [STORAGE_KEYS.lastResult]: buildPopupResultRecord(url, {
+      risk: "Phishing",
+      trust_index: 0,
+      ml_prob: 1,
+      rule_score: 1,
+      triggered_rules: [reason]
+    }, "fast", "override")
+  });
+  updateIcon("Phishing");
+}
 
-    const data = await response.json();
-    // Store in cache (limit cache size to prevent memory bloat)
-    cache.set(url, data);
-    if (cache.size > 100) {
-      // remove oldest
-      const oldestKey = cache.keys().next().value;
-      cache.delete(oldestKey);
+async function shouldBlock(result, scanMode, settings) {
+  const classification = getClassification(result, scanMode);
+  const trustScore = getTrustScore(result, scanMode);
+  const riskPercent = (1 - (trustScore ?? 0)) * 100;
+
+  if (classification === "Phishing") {
+    return settings.autoBlockPhishing || settings.autoBlockEnabled;
+  }
+
+  if (!settings.autoBlockEnabled) return false;
+  return riskPercent >= settings.riskThreshold;
+}
+
+async function resolveKnownPhishingDecision(url, settings) {
+  if (!settings.autoBlockPhishing) return null;
+
+  const knownPhishing = await getKnownPhishingMatch(url);
+  if (!knownPhishing) return null;
+
+  const label = knownPhishing.type === "domain" ? "known phishing domain" : "known phishing URL";
+  return {
+    decision: "block",
+    reason: `Matched ${label} from scan history`,
+    source: "history",
+    match: knownPhishing.match
+  };
+}
+
+async function processNavigation(details) {
+  const url = details.url;
+  if (details.frameId !== 0 || isSkippableUrl(url)) {
+    return;
+  }
+
+  const settings = await getSettings();
+  const decision = await resolveControlDecision(url);
+
+  if (decision.decision === "allow") {
+    await storeOverrideResult(url, "allow", decision.reason);
+    return;
+  }
+
+  if (decision.decision === "block") {
+    await storeOverrideResult(url, "block", decision.reason);
+    chrome.tabs.update(details.tabId, { url: buildWarningUrl(url, 0, decision.reason) });
+    return;
+  }
+
+  const historyDecision = await resolveKnownPhishingDecision(url, settings);
+  if (historyDecision?.decision === "block") {
+    await storeOverrideResult(url, "block", historyDecision.reason);
+    chrome.tabs.update(details.tabId, { url: buildWarningUrl(url, 0, historyDecision.reason) });
+    return;
+  }
+
+  chrome.action.setIcon({ path: "icons/checking.png" });
+
+  try {
+    const { scanMode, result } = await requestScan(url, settings);
+    await storeResultForPopup(url, scanMode, result);
+    updateIcon(getClassification(result, scanMode));
+    await persistScanRecord({
+      url,
+      result,
+      scanType: scanMode === "deep" ? "deep" : "predict",
+      source: "navigation"
+    }).catch((error) => console.warn("History persistence failed:", error));
+
+    if (await shouldBlock(result, scanMode, settings)) {
+      const classification = getClassification(result, scanMode);
+      const trustScore = getTrustScore(result, scanMode);
+      const reason = scanMode === "deep"
+        ? (result.l1l2?.triggered_rules || []).join(", ") || `${classification} threshold exceeded`
+        : (result.triggered_rules || []).join(", ") || `${classification} threshold exceeded`;
+
+      chrome.tabs.update(details.tabId, {
+        url: buildWarningUrl(url, trustScore, reason)
+      });
     }
-    return data;
   } catch (error) {
     console.error("API call failed:", error);
-    // On error, treat as unknown (allow navigation but show nothing)
-    return { risk: "Unknown", trust_index: 0.5 };
+    await setLocal({
+      [STORAGE_KEYS.lastResult]: buildPopupResultRecord(url, {
+        risk: "Unknown",
+        trust_index: 0.5,
+        triggered_rules: ["Scan unavailable"]
+      }, "fast", "error")
+    });
+    updateIcon("Unknown");
   }
 }
 
-// Intercept navigation
-chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
-  const url = details.url;
-  // Skip chrome internal pages
-  if (url.startsWith("chrome://") || url.startsWith("about:")) return;
+async function initializeExtensionState() {
+  await restoreSessionContext().catch((error) => console.warn("Session restore skipped:", error));
+  await ensureLocalSettings();
+  await getControlState();
+}
 
-  // Show "checking" icon (optional)
-  chrome.action.setIcon({ path: "icons/checking.png" });
+chrome.runtime.onInstalled.addListener(() => {
+  initializeExtensionState().catch((error) => console.error("Initialization error:", error));
+});
 
-  const result = await checkUrl(url);
+chrome.runtime.onStartup.addListener(() => {
+  initializeExtensionState().catch((error) => console.error("Startup error:", error));
+});
 
-  // Save result for popup
-  chrome.storage.local.set({ lastResult: result });
+chrome.webNavigation.onBeforeNavigate.addListener((details) => {
+  processNavigation(details).catch((error) => console.error("Navigation scan failed:", error));
+});
 
-  // Update icon
-  updateIcon(result.risk);
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local") return;
+  if (!changes[STORAGE_KEYS.supabaseSession]) return;
 
-  // If phishing, block by redirecting to warning page
-  if (result.risk === "Phishing") {
-    const warningUrl = chrome.runtime.getURL("warning/warning.html") +
-      `?url=${encodeURIComponent(url)}&trust=${result.trust_index}&reason=${encodeURIComponent(result.triggered_rules?.join(", "))}`;
-    chrome.tabs.update(details.tabId, { url: warningUrl });
-  }
+  initializeExtensionState().catch((error) => console.error("Auth state refresh failed:", error));
 });

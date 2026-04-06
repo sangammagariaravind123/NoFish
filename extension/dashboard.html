@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>PhishGuard Dashboard</title>
+  <link rel="stylesheet" href="styles/shared.css">
+  <style>
+    .summary-card h3,
+    .table-card h3,
+    .detail-card h3 {
+      margin-top: 0;
+    }
+
+    .filters {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      margin-bottom: 12px;
+    }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page-shell stack">
+    <div class="topbar">
+      <div>
+        <h1>PhishGuard Dashboard</h1>
+        <p class="muted">Scan history, trends, explanations, and personal security insights.</p>
+      </div>
+      <div class="toolbar-actions">
+        <button id="refreshBtn" class="btn secondary">Refresh</button>
+        <button id="openSettingsBtn" class="btn ghost">Settings</button>
+      </div>
+    </div>
+    <div id="refreshProgress" class="progress-shell">
+      <div class="progress-bar"></div>
+    </div>
+
+    <div class="card stack">
+      <div id="accountSummary"></div>
+      <div id="authPanel" class="stack" style="display:none;">
+        <div id="dashboardAuthOptions" class="inline">
+          <button id="showDashboardLoginBtn" class="btn secondary">Login</button>
+          <button id="showDashboardSignupBtn" class="btn">Sign Up</button>
+          <button id="dashboardGoogleBtn" class="btn ghost">Continue with Google</button>
+        </div>
+        <div id="dashboardAuthForm" class="stack" style="display:none;">
+          <div id="dashboardAuthFormTitle" style="font-weight:600;"></div>
+          <div class="form-grid">
+            <div id="dashboardDisplayNameField" class="field">
+              <label for="dashboardDisplayName">Display name</label>
+              <input id="dashboardDisplayName" type="text" placeholder="Optional">
+            </div>
+            <div class="field">
+              <label for="dashboardEmail">Email</label>
+              <input id="dashboardEmail" type="email" placeholder="you@example.com">
+            </div>
+            <div class="field">
+              <label for="dashboardPassword">Password</label>
+              <input id="dashboardPassword" type="password" placeholder="Password">
+            </div>
+          </div>
+          <div class="inline">
+            <button id="dashboardLoginBtn" class="btn secondary">Login</button>
+            <button id="dashboardSignupBtn" class="btn">Sign Up</button>
+            <button id="dashboardCancelAuthBtn" class="btn ghost">Cancel</button>
+          </div>
+        </div>
+        <div id="dashboardAuthMessage" class="muted"></div>
+      </div>
+    </div>
+
+    <div class="grid grid-3" id="metricGrid"></div>
+
+    <div class="stack">
+      <div class="card summary-card history-card">
+          <div class="section-header">
+            <h3>History Filters</h3>
+            <button id="clearHistoryBtn" class="btn ghost">Clear All</button>
+          </div>
+          <div class="filters">
+            <div class="field">
+              <label for="classificationFilter">Classification</label>
+              <select id="classificationFilter">
+                <option value="all">All</option>
+                <option value="Safe">Safe</option>
+                <option value="Suspicious">Suspicious</option>
+                <option value="Phishing">Phishing</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="recentFilter">Time Window</label>
+              <select id="recentFilter">
+                <option value="all">All time</option>
+                <option value="7">Last 7 days</option>
+                <option value="1">Last 24 hours</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="searchInput">Search URL / domain</label>
+              <input id="searchInput" type="text" placeholder="Search history">
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="history-table">
+              <thead>
+                <tr>
+                  <th class="history-url-col">URL</th>
+                  <th class="history-source-col">Source</th>
+                  <th class="history-risk-col">Risk</th>
+                  <th class="history-class-col">Classification</th>
+                  <th class="history-time-col">Timestamp</th>
+                  <th class="history-action-col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="historyTableBody"></tbody>
+            </table>
+          </div>
+          <div id="detailOverlay" class="history-detail-overlay" hidden>
+            <div id="detailOverlayBackdrop" class="history-detail-backdrop"></div>
+            <div class="history-detail-panel">
+              <div class="section-header">
+                <h3>Detailed Analysis</h3>
+                <button id="closeDetailBtn" class="btn ghost">Close</button>
+              </div>
+              <div id="detailPanel" class="muted">Select a scan record to inspect its analysis.</div>
+            </div>
+          </div>
+        </div>
+
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>Risk Trends</h3>
+          <div id="trendChart" class="chart-bars"></div>
+        </div>
+        <div class="card">
+          <h3>Top Risky Domains</h3>
+          <div id="topDomains"></div>
+        </div>
+      </div>
+
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>Weekly Summary</h3>
+          <div id="weeklySummary"></div>
+        </div>
+        <div class="card">
+          <h3>Personal Security Insights</h3>
+          <div id="securityInsights"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="dashboard.js"></script>
+</body>
+</html>

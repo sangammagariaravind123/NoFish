@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>PhishGuard Settings</title>
+  <link rel="stylesheet" href="styles/shared.css">
+</head>
+<body>
+  <div class="page-shell stack">
+    <div class="topbar">
+      <div>
+        <h1>Settings & Controls</h1>
+        <p class="muted">Customize blocking behavior, scan mode, and your allow/block rules.</p>
+      </div>
+      <div class="toolbar-actions">
+        <button id="openDashboardBtn" class="btn secondary">Dashboard</button>
+      </div>
+    </div>
+
+    <div class="card stack">
+      <div id="settingsAccountSummary"></div>
+      <div id="settingsAuthPanel" class="stack" style="display:none;">
+        <div class="form-grid">
+          <div class="field">
+            <label for="settingsDisplayName">Display name</label>
+            <input id="settingsDisplayName" type="text" placeholder="Optional">
+          </div>
+          <div class="field">
+            <label for="settingsEmail">Email</label>
+            <input id="settingsEmail" type="email" placeholder="you@example.com">
+          </div>
+          <div class="field">
+            <label for="settingsPassword">Password</label>
+            <input id="settingsPassword" type="password" placeholder="Password">
+          </div>
+        </div>
+        <div class="inline">
+          <button id="settingsLoginBtn" class="btn secondary">Login</button>
+          <button id="settingsSignupBtn" class="btn">Sign Up</button>
+          <button id="settingsGoogleBtn" class="btn ghost">Continue with Google</button>
+        </div>
+        <div id="settingsAuthMessage" class="muted"></div>
+      </div>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card stack">
+        <h2>Protection Settings</h2>
+        <div class="field">
+          <label><input id="autoBlockToggle" type="checkbox"> Auto-block risky pages</label>
+        </div>
+        <div class="field">
+          <label><input id="autoBlockPhishingToggle" type="checkbox"> Auto-block phishing sites</label>
+        </div>
+        <div class="field">
+          <label><input id="includeLocalHistoryToggle" type="checkbox"> Include local history</label>
+        </div>
+        <div class="field">
+          <label for="riskThreshold">Risk threshold <span id="riskThresholdValue"></span></label>
+          <input id="riskThreshold" type="range" min="10" max="95" step="5">
+        </div>
+        <div class="field">
+          <label for="scanMode">Scan mode</label>
+          <select id="scanMode">
+            <option value="fast">Fast (L1 + L2)</option>
+            <option value="deep">Deep (always L3)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="securityMode">Security mode</label>
+          <select id="securityMode">
+            <option value="strict">Strict</option>
+            <option value="balanced">Balanced</option>
+            <option value="relaxed">Relaxed</option>
+          </select>
+        </div>
+        <div class="inline">
+          <button id="applyPresetBtn" class="btn ghost">Apply Mode Preset</button>
+          <button id="saveSettingsBtn" class="btn">Save Settings</button>
+        </div>
+        <div id="settingsMessage" class="muted"></div>
+      </div>
+
+      <div class="card stack">
+        <h2>Temporary Allows</h2>
+        <div id="temporaryAllowList" class="stack muted">No active temporary allows.</div>
+        <button id="clearTemporaryAllowsBtn" class="btn ghost">Clear Temporary Allows</button>
+      </div>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card stack">
+        <h2>Allowlist</h2>
+        <div class="muted">Trusted entries always override blocking. Domain rules sync when you are signed in. Exact URL rules stay local to this browser.</div>
+        <div class="inline">
+          <select id="allowType">
+            <option value="domain">Domain (syncs in account mode)</option>
+            <option value="url">Exact URL (local only)</option>
+          </select>
+          <input id="allowValue" type="text" placeholder="example.com or https://example.com/login" style="flex:1;">
+          <button id="addAllowBtn" class="btn">Add</button>
+        </div>
+        <div id="allowListContainer" class="stack"></div>
+      </div>
+
+      <div class="card stack">
+        <h2>Blocklist</h2>
+        <div class="muted">Local mode stores every block rule in this browser only. Signed-in mode stores every block rule in your account and mirrors it here as cache.</div>
+        <div class="inline">
+          <select id="blockType">
+            <option value="domain">Domain</option>
+            <option value="url">Exact URL</option>
+            <option value="suffix">Domain suffix</option>
+            <option value="keyword">Keyword in URL</option>
+          </select>
+          <input id="blockValue" type="text" placeholder="Enter a rule value" style="flex:1;">
+          <button id="addBlockBtn" class="btn">Add</button>
+        </div>
+        <div id="blockListContainer" class="stack"></div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="settings.js"></script>
+</body>
+</html>
