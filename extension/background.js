@@ -53,6 +53,16 @@ function summarizeDeepResult(result) {
   };
 }
 
+function buildPopupResultRecord(url, result, scanMode, source = "scan") {
+  return {
+    url,
+    scanMode,
+    source,
+    timestamp: Date.now(),
+    result
+  };
+}
+
 async function requestScan(url, settings) {
   const scanMode = getScanMode(settings);
   const cacheKey = getCacheKey(url, scanMode);
@@ -83,9 +93,7 @@ async function requestScan(url, settings) {
 }
 
 async function storeResultForPopup(url, scanMode, result) {
-  const payload = {
-    [STORAGE_KEYS.lastResult]: scanMode === "deep" ? summarizeDeepResult(result) : result
-  };
+  const payload = {};
 
   if (scanMode === "deep") {
     payload[STORAGE_KEYS.deepScanResult] = {
@@ -93,6 +101,8 @@ async function storeResultForPopup(url, scanMode, result) {
       result,
       timestamp: Date.now()
     };
+  } else {
+    payload[STORAGE_KEYS.lastResult] = buildPopupResultRecord(url, result, scanMode, "scan");
   }
 
   await setLocal(payload);
@@ -101,26 +111,26 @@ async function storeResultForPopup(url, scanMode, result) {
 async function storeOverrideResult(url, kind, reason) {
   if (kind === "allow") {
     await setLocal({
-      [STORAGE_KEYS.lastResult]: {
+      [STORAGE_KEYS.lastResult]: buildPopupResultRecord(url, {
         risk: "Safe",
         trust_index: 1,
         ml_prob: 0,
         rule_score: 0,
         triggered_rules: [reason]
-      }
+      }, "fast", "override")
     });
     updateIcon("Safe");
     return;
   }
 
   await setLocal({
-    [STORAGE_KEYS.lastResult]: {
+    [STORAGE_KEYS.lastResult]: buildPopupResultRecord(url, {
       risk: "Phishing",
       trust_index: 0,
       ml_prob: 1,
       rule_score: 1,
       triggered_rules: [reason]
-    }
+    }, "fast", "override")
   });
   updateIcon("Phishing");
 }
@@ -207,11 +217,11 @@ async function processNavigation(details) {
   } catch (error) {
     console.error("API call failed:", error);
     await setLocal({
-      [STORAGE_KEYS.lastResult]: {
+      [STORAGE_KEYS.lastResult]: buildPopupResultRecord(url, {
         risk: "Unknown",
         trust_index: 0.5,
         triggered_rules: ["Scan unavailable"]
-      }
+      }, "fast", "error")
     });
     updateIcon("Unknown");
   }
