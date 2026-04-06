@@ -8,6 +8,38 @@ import { classificationClass, formatPercent, openExtensionPage, safeText } from 
 const DEEP_SCAN_EXPIRY = 5 * 60 * 1000;
 let authFormMode = null;
 
+function normalizePopupResultRecord(record) {
+  if (!record) return null;
+
+  if (record.result && record.url) {
+    return record;
+  }
+
+  return {
+    url: null,
+    scanMode: "fast",
+    source: "legacy",
+    timestamp: 0,
+    result: record
+  };
+}
+
+function shouldUseDeepResult(currentUrl, deepScanRecord, lastResultRecord) {
+  if (!currentUrl || !deepScanRecord || deepScanRecord.url !== currentUrl) {
+    return false;
+  }
+
+  if (Date.now() - deepScanRecord.timestamp >= DEEP_SCAN_EXPIRY) {
+    return false;
+  }
+
+  if (!lastResultRecord || lastResultRecord.url !== currentUrl) {
+    return true;
+  }
+
+  return Number(deepScanRecord.timestamp || 0) >= Number(lastResultRecord.timestamp || 0);
+}
+
 function formatList(items, emptyText = "None") {
   if (!items || !items.length) return emptyText;
   return items.map((item) => `• ${safeText(item)}`).join("<br>");
@@ -347,14 +379,7 @@ async function runDeepScan() {
     };
 
     await setLocal({
-      deepScanResult: deepScanStore,
-      lastResult: {
-        risk: deepResult.final_risk,
-        trust_index: deepResult.final_trust_index,
-        ml_prob: deepResult.l1l2?.ml_prob ?? 0,
-        rule_score: deepResult.l1l2?.rule_score ?? 0,
-        triggered_rules: deepResult.l1l2?.triggered_rules ?? []
-      }
+      deepScanResult: deepScanStore
     });
 
     await persistScanRecord({
@@ -381,17 +406,19 @@ async function initializePopup() {
 
   const currentUrl = await getUrlForDeepScan();
   const data = await getLocal(["deepScanResult", "lastResult"]);
+  const lastResultRecord = normalizePopupResultRecord(data.lastResult);
 
   if (!currentUrl) {
     document.getElementById("result").innerHTML = "<p>Unable to get current tab URL.</p>";
-  } else if (
-    data.deepScanResult &&
-    data.deepScanResult.url === currentUrl &&
-    Date.now() - data.deepScanResult.timestamp < DEEP_SCAN_EXPIRY
-  ) {
+  } else if (shouldUseDeepResult(currentUrl, data.deepScanResult, lastResultRecord)) {
     await displayResult(data.deepScanResult.result, true);
-  } else if (data.lastResult) {
-    await displayResult(data.lastResult, false);
+  } else if (
+    lastResultRecord &&
+    lastResultRecord.url === currentUrl &&
+    lastResultRecord.scanMode !== "deep" &&
+    lastResultRecord.result
+  ) {
+    await displayResult(lastResultRecord.result, false);
   } else {
     document.getElementById("result").innerHTML = "<p>No recent scan.</p>";
   }
