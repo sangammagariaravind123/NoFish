@@ -6,6 +6,7 @@ import { openExtensionPage, safeText, formatDateTime, formatPercent, formatRiskP
 let historyRecords = [];
 let authFormMode = null;
 let googleAuthInProgress = false;
+let selectedHistoryRecord = null;
 
 function withTimeout(promise, milliseconds, label) {
   return Promise.race([
@@ -147,7 +148,7 @@ function renderMetrics(filteredHistory) {
 function renderHistoryTable(filteredHistory) {
   const tableBody = document.getElementById("historyTableBody");
   if (!filteredHistory.length) {
-    tableBody.innerHTML = `<tr><td colspan="5" class="muted">No scan records found for the selected filters.</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="6" class="muted">No scan records found for the selected filters.</td></tr>`;
     return;
   }
 
@@ -157,6 +158,7 @@ function renderHistoryTable(filteredHistory) {
         <span class="history-url-primary" title="${safeText(record.domain || record.url)}">${safeText(record.domain || record.url)}</span>
         <span class="history-url-secondary muted" title="${safeText(record.url)}">${safeText(record.url)}</span>
       </td>
+      <td>${safeText(record.sourceLabel || "Local")}</td>
       <td>${formatRiskPercent(record.riskScore)}</td>
       <td><span class="pill ${classificationClass(record.classification)}">${safeText(record.classification)}</span></td>
       <td>${safeText(formatDateTime(record.timestamp))}</td>
@@ -179,6 +181,9 @@ function renderHistoryTable(filteredHistory) {
       if (!confirmed) return;
 
       try {
+        if (selectedHistoryRecord && selectedHistoryRecord.id === record.id && selectedHistoryRecord.historySource === record.historySource) {
+          closeDetailOverlay();
+        }
         await deleteHistoryRecord(record);
         await refreshDashboard();
       } catch (error) {
@@ -186,6 +191,25 @@ function renderHistoryTable(filteredHistory) {
       }
     });
   });
+}
+
+function openDetailOverlay() {
+  const overlay = document.getElementById("detailOverlay");
+  if (!overlay) return;
+  overlay.hidden = false;
+  overlay.classList.add("active");
+}
+
+function closeDetailOverlay() {
+  const overlay = document.getElementById("detailOverlay");
+  const detailPanel = document.getElementById("detailPanel");
+  selectedHistoryRecord = null;
+  if (detailPanel) {
+    detailPanel.textContent = "Select a scan record to inspect its analysis.";
+  }
+  if (!overlay) return;
+  overlay.classList.remove("active");
+  overlay.hidden = true;
 }
 
 function renderTrendChart(filteredHistory) {
@@ -247,6 +271,7 @@ async function renderInsights(filteredHistory) {
 }
 
 async function renderDetail(record) {
+  selectedHistoryRecord = record;
   const detailPanel = document.getElementById("detailPanel");
   const rawResult = await getAnalysisLog(record);
   const isDeep = Boolean(rawResult?.final_risk || rawResult?.sandbox);
@@ -260,6 +285,7 @@ async function renderDetail(record) {
           <div>
             <div class="muted">URL</div>
             <div style="font-weight:700;">${safeText(record.url)}</div>
+            <div class="muted">Source: ${safeText(record.sourceLabel || "Local")}</div>
           </div>
           <span class="pill ${classificationClass(record.classification)}">${safeText(record.classification)}</span>
         </div>
@@ -295,6 +321,7 @@ async function renderDetail(record) {
       </div>
     </div>
   `;
+  openDetailOverlay();
 }
 
 async function refreshDashboard() {
@@ -302,6 +329,15 @@ async function refreshDashboard() {
   try {
     historyRecords = await withTimeout(getHistory(), 6000, "Dashboard history load timed out.");
     const filteredHistory = getFilteredHistory();
+    if (selectedHistoryRecord) {
+      const stillVisible = filteredHistory.some((record) => (
+        record.id === selectedHistoryRecord.id &&
+        record.historySource === selectedHistoryRecord.historySource
+      ));
+      if (!stillVisible) {
+        closeDetailOverlay();
+      }
+    }
     renderMetrics(filteredHistory);
     renderHistoryTable(filteredHistory);
     renderTrendChart(filteredHistory);
@@ -371,7 +407,7 @@ async function initializeDashboard() {
 
     try {
       await clearHistoryRecords();
-      document.getElementById("detailPanel").textContent = "Select a scan record to inspect its analysis.";
+      closeDetailOverlay();
       await refreshDashboard();
     } catch (error) {
       setAuthMessage(error.message || "Could not clear history.", true);
@@ -386,6 +422,14 @@ async function initializeDashboard() {
   document.getElementById("dashboardLoginBtn").addEventListener("click", () => handleEmailAuth("login"));
   document.getElementById("dashboardSignupBtn").addEventListener("click", () => handleEmailAuth("signup"));
   document.getElementById("dashboardGoogleBtn").addEventListener("click", startGoogleAuth);
+  document.getElementById("closeDetailBtn").addEventListener("click", closeDetailOverlay);
+  document.getElementById("detailOverlayBackdrop").addEventListener("click", closeDetailOverlay);
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeDetailOverlay();
+    }
+  });
 
   registerAuthStateListener(async () => {
     await renderAccountSummary().catch((error) => {

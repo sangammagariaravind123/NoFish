@@ -21,6 +21,7 @@ export const STORAGE_KEYS = {
 export const DEFAULT_SETTINGS = {
   autoBlockEnabled: true,
   autoBlockPhishing: true,
+  includeLocalHistory: false,
   riskThreshold: 60,
   scanMode: "fast",
   securityMode: "balanced"

@@ -203,6 +203,10 @@ table {
   width: 90px;
 }
 
+.history-source-col {
+  width: 90px;
+}
+
 .history-class-col {
   width: 130px;
 }
@@ -294,17 +298,49 @@ tbody tr:hover {
   padding-left: 18px;
 }
 
-.split {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
-}
-
 .detail-box {
   background: #f7fafc;
   border-radius: 12px;
   padding: 14px;
   border: 1px solid #dbe4f0;
+}
+
+.history-card {
+  position: relative;
+}
+
+.history-detail-overlay {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: stretch;
+  justify-content: center;
+  padding: 18px;
+  z-index: 4;
+}
+
+.history-detail-overlay.active {
+  display: flex;
+}
+
+.history-detail-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.48);
+  border-radius: 16px;
+}
+
+.history-detail-panel {
+  position: relative;
+  z-index: 1;
+  width: min(980px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #dbe4f0;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.18);
+  padding: 18px;
 }
 
 .progress-shell {
@@ -361,10 +397,4 @@ tbody tr:hover {
   border-radius: 999px;
   background: #edf2f7;
   font-size: 12px;
-}
-
-@media (max-width: 900px) {
-  .split {
-    grid-template-columns: 1fr;
-  }
 }

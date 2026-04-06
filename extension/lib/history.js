@@ -1,4 +1,5 @@
 import { MAX_LOCAL_HISTORY, RISK_ORDER, STORAGE_KEYS } from "./constants.js";
+import { getSettings } from "./settings-store.js";
 import { getValue, updateValue } from "./storage.js";
 import { ensureSupabaseSession, getSupabaseClient } from "./supabase-client.js";
 import { getBaseDomain, normalizeUrl } from "./url-utils.js";
@@ -38,6 +39,23 @@ export function normalizeScanPayload(url, result, scanType = "predict", source =
   };
 }
 
+function normalizeHistorySource(source) {
+  return String(source || "").toLowerCase() === "synced" ? "synced" : "local";
+}
+
+function sourceLabelFor(source) {
+  return normalizeHistorySource(source) === "synced" ? "Synced" : "Local";
+}
+
+function decorateHistoryRecord(record, fallbackSource = "local") {
+  const historySource = normalizeHistorySource(record.historySource || fallbackSource);
+  return {
+    ...record,
+    historySource,
+    sourceLabel: sourceLabelFor(historySource)
+  };
+}
+
 async function getSessionUser() {
   const session = await ensureSupabaseSession();
   if (session?.user) {
@@ -49,7 +67,26 @@ async function getSessionUser() {
 }
 
 async function getLocalHistory() {
-  return (await getValue(STORAGE_KEYS.recentScans, [])).map(stripRawResult);
+  return (await getValue(STORAGE_KEYS.recentScans, []))
+    .map(stripRawResult)
+    .map((record) => decorateHistoryRecord(record, "local"));
+}
+
+async function getHistoryPreferences() {
+  const [user, settings] = await Promise.all([
+    getSessionUser(),
+    getSettings()
+  ]);
+  const includeLocalHistory = Boolean(settings.includeLocalHistory);
+
+  return {
+    user,
+    includeLocalHistory,
+    saveLocal: !user || includeLocalHistory,
+    saveRemote: Boolean(user),
+    readLocal: !user || includeLocalHistory,
+    readRemote: Boolean(user)
+  };
 }
 
 function mergeHistoryRecords(primaryRecords = [], fallbackRecords = []) {
@@ -57,7 +94,7 @@ function mergeHistoryRecords(primaryRecords = [], fallbackRecords = []) {
   const merged = [];
 
   for (const record of [...primaryRecords, ...fallbackRecords]) {
-    const key = `${record.url || ""}|${record.timestamp || ""}|${record.classification || ""}|${record.scanType || ""}`;
+    const key = `${record.historySource || ""}|${record.url || ""}|${record.timestamp || ""}|${record.classification || ""}|${record.scanType || ""}`;
     if (seen.has(key)) continue;
     seen.add(key);
     merged.push(record);
@@ -70,17 +107,20 @@ function mergeHistoryRecords(primaryRecords = [], fallbackRecords = []) {
 
 export async function persistScanRecord(payload) {
   const historyRecord = normalizeScanPayload(payload.url, payload.result, payload.scanType, payload.source);
-  await persistLocalHistory(historyRecord);
+  const preferences = await getHistoryPreferences();
 
-  const user = await getSessionUser();
-  if (user) {
-    console.info("[PhishGuard] Attempting remote scan save for", user.email || user.id, payload.url);
-    await persistRemoteHistory(user.id, historyRecord);
+  if (preferences.saveLocal) {
+    await persistLocalHistory(decorateHistoryRecord(historyRecord, "local"));
+  }
+
+  if (preferences.saveRemote && preferences.user) {
+    console.info("[PhishGuard] Attempting remote scan save for", preferences.user.email || preferences.user.id, payload.url);
+    await persistRemoteHistory(preferences.user.id, decorateHistoryRecord(historyRecord, "synced"));
   } else {
     console.info("[PhishGuard] No signed-in session found, keeping scan in local history only.");
   }
 
-  return historyRecord;
+  return decorateHistoryRecord(historyRecord, preferences.saveRemote && !preferences.saveLocal ? "synced" : "local");
 }
 
 async function persistLocalHistory(record) {
@@ -139,27 +179,27 @@ async function persistRemoteHistory(userId, record) {
 }
 
 export async function getHistory() {
-  const user = await getSessionUser();
-  if (!user) {
+  const preferences = await getHistoryPreferences();
+  if (!preferences.readRemote || !preferences.user) {
     console.info("[PhishGuard] Dashboard history source: local only");
     return getLocalHistory();
   }
 
   const supabase = getSupabaseClient();
-  const localHistory = await getLocalHistory();
+  const localHistory = preferences.readLocal ? await getLocalHistory() : [];
 
   try {
     const [historyResult, logsResult] = await Promise.all([
       supabase
         .from("scan_history")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_id", preferences.user.id)
         .order("timestamp", { ascending: false })
         .limit(MAX_LOCAL_HISTORY),
       supabase
         .from("scan_analysis_logs")
         .select("url, raw_result_json, created_at")
-        .eq("user_id", user.id)
+        .eq("user_id", preferences.user.id)
         .order("created_at", { ascending: false })
         .limit(MAX_LOCAL_HISTORY)
     ]);
@@ -198,18 +238,30 @@ export async function getHistory() {
         l1l2Risk: row.l1l2_risk,
         l3Risk: row.l3_risk,
         triggeredRules: extractTriggeredRules(closestLog?.raw_result_json),
-        timestamp: row.timestamp
+        timestamp: row.timestamp,
+        historySource: "synced",
+        sourceLabel: "Synced"
       };
     });
 
-    console.info("[PhishGuard] Dashboard history source: remote + local cache", {
+    if (!preferences.readLocal) {
+      console.info("[PhishGuard] Dashboard history source: synced only", {
+        remote: remoteHistory.length
+      });
+      return remoteHistory;
+    }
+
+    console.info("[PhishGuard] Dashboard history source: synced + local", {
       remote: remoteHistory.length,
       local: localHistory.length
     });
     return mergeHistoryRecords(remoteHistory, localHistory);
   } catch (error) {
-    console.warn("Remote history unavailable, using local history fallback:", error.message || error);
-    return localHistory;
+    console.warn("Remote history unavailable:", error.message || error);
+    if (preferences.readLocal) {
+      return localHistory;
+    }
+    throw error;
   }
 }
 
@@ -219,14 +271,13 @@ function stripRawResult(record) {
 }
 
 export async function getAnalysisLog(record) {
+  const normalizedSource = normalizeHistorySource(record.historySource);
   const localLogs = await getValue(STORAGE_KEYS.analysisLogs, []);
   const localMatch = localLogs.find((log) => log.id === record.id);
-  if (localMatch) {
-    return localMatch.rawResult;
-  }
+  if (normalizedSource === "local" && localMatch) return localMatch.rawResult;
 
   const user = await getSessionUser();
-  if (!user) return null;
+  if (!user) return localMatch?.rawResult ?? null;
 
   const supabase = getSupabaseClient();
   try {
@@ -250,10 +301,10 @@ export async function getAnalysisLog(record) {
       return best;
     }, null);
 
-    return closest?.value?.raw_result_json ?? null;
+    return closest?.value?.raw_result_json ?? localMatch?.rawResult ?? null;
   } catch (error) {
     console.warn("Remote analysis log unavailable:", error.message || error);
-    return null;
+    return localMatch?.rawResult ?? null;
   }
 }
 
@@ -392,32 +443,73 @@ export async function buildInsights(history) {
 }
 
 export async function getKnownPhishingMatch(url) {
-  const history = await getValue(STORAGE_KEYS.recentScans, []);
   const normalizedTargetUrl = normalizeUrl(url).toLowerCase();
   const targetDomain = getBaseDomain(url);
+  const preferences = await getHistoryPreferences();
 
-  const exactMatch = history.find((record) => (
-    normalizeClassification(record.classification || record.l3Risk || record.l1l2Risk) === "Phishing" &&
-    normalizeUrl(record.url).toLowerCase() === normalizedTargetUrl
-  ));
+  if (preferences.readLocal) {
+    const history = await getValue(STORAGE_KEYS.recentScans, []);
+    const exactMatch = history.find((record) => (
+      normalizeClassification(record.classification || record.l3Risk || record.l1l2Risk) === "Phishing" &&
+      normalizeUrl(record.url).toLowerCase() === normalizedTargetUrl
+    ));
 
-  if (exactMatch) {
-    return {
-      type: "url",
-      match: stripRawResult(exactMatch)
-    };
+    if (exactMatch) {
+      return {
+        type: "url",
+        match: decorateHistoryRecord(stripRawResult(exactMatch), "local")
+      };
+    }
+
+    const domainMatch = history.find((record) => (
+      normalizeClassification(record.classification || record.l3Risk || record.l1l2Risk) === "Phishing" &&
+      (record.domain || getBaseDomain(record.url)) === targetDomain
+    ));
+
+    if (domainMatch) {
+      return {
+        type: "domain",
+        match: decorateHistoryRecord(stripRawResult(domainMatch), "local")
+      };
+    }
   }
 
-  const domainMatch = history.find((record) => (
-    normalizeClassification(record.classification || record.l3Risk || record.l1l2Risk) === "Phishing" &&
-    (record.domain || getBaseDomain(record.url)) === targetDomain
-  ));
+  if (preferences.readRemote && preferences.user) {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from("scan_history")
+      .select("id, url, classification, trust_score, ml_score, rule_score, sandbox_score, l1l2_risk, l3_risk, timestamp")
+      .eq("user_id", preferences.user.id)
+      .eq("classification", "Phishing")
+      .order("timestamp", { ascending: false })
+      .limit(MAX_LOCAL_HISTORY);
 
-  if (domainMatch) {
-    return {
-      type: "domain",
-      match: stripRawResult(domainMatch)
-    };
+    if (!error) {
+      const remoteHistory = (data || []).map((row) => decorateHistoryRecord({
+        id: row.id,
+        url: row.url,
+        domain: getBaseDomain(row.url),
+        classification: row.classification,
+        trustScore: row.trust_score,
+        riskScore: row.trust_score === null || row.trust_score === undefined ? null : Number(((1 - row.trust_score) * 100).toFixed(1)),
+        mlScore: row.ml_score,
+        ruleScore: row.rule_score,
+        sandboxScore: row.sandbox_score,
+        l1l2Risk: row.l1l2_risk,
+        l3Risk: row.l3_risk,
+        timestamp: row.timestamp
+      }, "synced"));
+
+      const exactMatch = remoteHistory.find((record) => normalizeUrl(record.url).toLowerCase() === normalizedTargetUrl);
+      if (exactMatch) {
+        return { type: "url", match: exactMatch };
+      }
+
+      const domainMatch = remoteHistory.find((record) => (record.domain || getBaseDomain(record.url)) === targetDomain);
+      if (domainMatch) {
+        return { type: "domain", match: domainMatch };
+      }
+    }
   }
 
   return null;
@@ -425,8 +517,9 @@ export async function getKnownPhishingMatch(url) {
 
 function matchesRecord(record, targetRecord) {
   return (
-    record.id === targetRecord.id ||
+    normalizeHistorySource(record.historySource) === normalizeHistorySource(targetRecord.historySource) &&
     (
+      record.id === targetRecord.id ||
       normalizeUrl(record.url).toLowerCase() === normalizeUrl(targetRecord.url).toLowerCase() &&
       String(record.timestamp) === String(targetRecord.timestamp) &&
       String(record.classification || "") === String(targetRecord.classification || "")
@@ -435,20 +528,24 @@ function matchesRecord(record, targetRecord) {
 }
 
 export async function deleteHistoryRecord(targetRecord) {
-  await updateValue(
-    STORAGE_KEYS.recentScans,
-    async (records = []) => records.filter((record) => !matchesRecord(record, targetRecord)),
-    []
-  );
+  const normalizedSource = normalizeHistorySource(targetRecord.historySource);
+  if (normalizedSource === "local") {
+    await updateValue(
+      STORAGE_KEYS.recentScans,
+      async (records = []) => records.filter((record) => !matchesRecord(record, targetRecord)),
+      []
+    );
 
-  await updateValue(
-    STORAGE_KEYS.analysisLogs,
-    async (logs = []) => logs.filter((log) => (
-      !(normalizeUrl(log.url).toLowerCase() === normalizeUrl(targetRecord.url).toLowerCase() &&
-        String(log.timestamp) === String(targetRecord.timestamp))
-    )),
-    []
-  );
+    await updateValue(
+      STORAGE_KEYS.analysisLogs,
+      async (logs = []) => logs.filter((log) => (
+        !(normalizeUrl(log.url).toLowerCase() === normalizeUrl(targetRecord.url).toLowerCase() &&
+          String(log.timestamp) === String(targetRecord.timestamp))
+      )),
+      []
+    );
+    return;
+  }
 
   const user = await getSessionUser();
   if (!user) return;
@@ -482,19 +579,21 @@ export async function deleteHistoryRecord(targetRecord) {
 }
 
 export async function clearHistoryRecords() {
-  await updateValue(STORAGE_KEYS.recentScans, async () => [], []);
-  await updateValue(STORAGE_KEYS.analysisLogs, async () => [], []);
+  const preferences = await getHistoryPreferences();
+  if (preferences.readLocal) {
+    await updateValue(STORAGE_KEYS.recentScans, async () => [], []);
+    await updateValue(STORAGE_KEYS.analysisLogs, async () => [], []);
+  }
 
-  const user = await getSessionUser();
-  if (!user) return;
+  if (!preferences.readRemote || !preferences.user) return;
 
   const supabase = getSupabaseClient();
-  console.info("[PhishGuard] Clearing all remote scan history for", user.email || user.id);
+  console.info("[PhishGuard] Clearing all remote scan history for", preferences.user.email || preferences.user.id);
 
   const { error: historyDeleteError } = await supabase
     .from("scan_history")
     .delete()
-    .eq("user_id", user.id);
+    .eq("user_id", preferences.user.id);
 
   if (historyDeleteError) {
     console.warn("[PhishGuard] Remote history clear failed:", historyDeleteError.message || historyDeleteError);
@@ -504,7 +603,7 @@ export async function clearHistoryRecords() {
   const { error: logsDeleteError } = await supabase
     .from("scan_analysis_logs")
     .delete()
-    .eq("user_id", user.id);
+    .eq("user_id", preferences.user.id);
 
   if (logsDeleteError) {
     console.warn("[PhishGuard] Remote analysis log clear failed:", logsDeleteError.message || logsDeleteError);

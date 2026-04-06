@@ -88,6 +88,7 @@ async function bootstrapUser(user) {
         user_id: user.id,
         auto_block_enabled: DEFAULT_SETTINGS.autoBlockEnabled,
         auto_block_phishing: DEFAULT_SETTINGS.autoBlockPhishing,
+        include_local_history: DEFAULT_SETTINGS.includeLocalHistory,
         risk_threshold: DEFAULT_SETTINGS.riskThreshold,
         scan_mode: DEFAULT_SETTINGS.scanMode,
         security_mode: DEFAULT_SETTINGS.securityMode,
