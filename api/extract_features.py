@@ -14,16 +14,18 @@ from playwright.sync_api import sync_playwright  # pyright: ignore[reportMissing
 
 
 def extract_all_features(url):
-    with sync_playwright() as p:
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context()
+            page = context.new_page()
 
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context()
-        page = context.new_page()
+            page.goto(url, wait_until="load")
 
-        page.goto(url, wait_until="load")
-
-        base_domain = urlparse(url).netloc
-        features = {}
+            base_domain = urlparse(url).netloc
+            features = {}
+    except Exception as e:
+        raise e
 
         # 👉 ADD FEATURES HERE
     """
@@ -555,49 +557,3 @@ if __name__ == "__main__":
 
     # Save to CSV if needed
     # df_features.to_csv("extracted_features.csv", index=False)
-
-import requests
-
-
-def check_google_index(url):
-    try:
-        query = f"https://www.google.com/search?q=site:{url}"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        res = requests.get(query, headers=headers, timeout=5)
-
-        if "did not match any documents" in res.text:
-            return 0
-        return 1
-    except:
-        return 0
-
-
-BING_API_KEY = "YOUR_KEY"
-
-
-def check_index_bing(url):
-    try:
-        endpoint = "https://api.bing.microsoft.com/v7.0/search"
-        headers = {"Ocp-Apim-Subscription-Key": BING_API_KEY}
-        params = {"q": f"site:{url}", "count": 1}
-
-        response = requests.get(endpoint, headers=headers, params=params, timeout=5)
-        data = response.json()
-
-        if "webPages" in data and data["webPages"]["value"]:
-            return 1
-        return 0
-    except:
-        return 0
-
-
-def count_external_links(page, base_domain):
-    links = page.query_selector_all("a[href]")
-    count = 0
-
-    for link in links:
-        href = link.get_attribute("href")
-        if href and base_domain not in href:
-            count += 1
-
-    return count
