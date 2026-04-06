@@ -33,6 +33,7 @@ create table if not exists public.user_settings (
   user_id uuid primary key references auth.users (id) on delete cascade,
   auto_block_enabled boolean not null default true,
   auto_block_phishing boolean not null default true,
+  include_local_history boolean not null default false,
   risk_threshold integer not null default 60,
   scan_mode text not null default 'fast',
   security_mode text not null default 'balanced',
@@ -40,6 +41,7 @@ create table if not exists public.user_settings (
 );
 
 alter table public.user_settings add column if not exists auto_block_phishing boolean not null default true;
+alter table public.user_settings add column if not exists include_local_history boolean not null default false;
 
 create table if not exists public.allowlist (
   id uuid primary key default gen_random_uuid(),

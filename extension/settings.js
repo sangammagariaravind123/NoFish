@@ -54,6 +54,7 @@ async function renderSettingsForm() {
   const settings = await getSettings();
   document.getElementById("autoBlockToggle").checked = settings.autoBlockEnabled;
   document.getElementById("autoBlockPhishingToggle").checked = settings.autoBlockPhishing;
+  document.getElementById("includeLocalHistoryToggle").checked = settings.includeLocalHistory;
   document.getElementById("riskThreshold").value = settings.riskThreshold;
   document.getElementById("riskThresholdValue").textContent = `${settings.riskThreshold}%`;
   document.getElementById("scanMode").value = settings.scanMode;
@@ -113,6 +114,7 @@ async function saveSettingsFromForm() {
     await saveSettings({
       autoBlockEnabled: document.getElementById("autoBlockToggle").checked,
       autoBlockPhishing: document.getElementById("autoBlockPhishingToggle").checked,
+      includeLocalHistory: document.getElementById("includeLocalHistoryToggle").checked,
       riskThreshold: Number(document.getElementById("riskThreshold").value),
       scanMode: document.getElementById("scanMode").value,
       securityMode: document.getElementById("securityMode").value

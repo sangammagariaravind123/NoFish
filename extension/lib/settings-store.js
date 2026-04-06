@@ -12,6 +12,7 @@ function normalizeSettings(settings = {}) {
     ...DEFAULT_SETTINGS,
     autoBlockEnabled: settings.autoBlockEnabled ?? settings.auto_block_enabled ?? DEFAULT_SETTINGS.autoBlockEnabled,
     autoBlockPhishing: settings.autoBlockPhishing ?? settings.auto_block_phishing ?? DEFAULT_SETTINGS.autoBlockPhishing,
+    includeLocalHistory: settings.includeLocalHistory ?? settings.include_local_history ?? DEFAULT_SETTINGS.includeLocalHistory,
     riskThreshold: Number(settings.riskThreshold ?? settings.risk_threshold ?? DEFAULT_SETTINGS.riskThreshold),
     scanMode: settings.scanMode ?? settings.scan_mode ?? DEFAULT_SETTINGS.scanMode,
     securityMode: settings.securityMode ?? settings.security_mode ?? DEFAULT_SETTINGS.securityMode
@@ -91,6 +92,7 @@ export async function saveSettingsRemote(settings) {
     user_id: user.id,
     auto_block_enabled: settings.autoBlockEnabled,
     auto_block_phishing: settings.autoBlockPhishing,
+    include_local_history: settings.includeLocalHistory,
     risk_threshold: settings.riskThreshold,
     scan_mode: settings.scanMode,
     security_mode: settings.securityMode,

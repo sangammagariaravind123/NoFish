@@ -79,9 +79,8 @@
 
     <div class="grid grid-3" id="metricGrid"></div>
 
-    <div class="split">
-      <div class="stack">
-        <div class="card summary-card">
+    <div class="stack">
+      <div class="card summary-card history-card">
           <div class="section-header">
             <h3>History Filters</h3>
             <button id="clearHistoryBtn" class="btn ghost">Clear All</button>
@@ -114,6 +113,7 @@
               <thead>
                 <tr>
                   <th class="history-url-col">URL</th>
+                  <th class="history-source-col">Source</th>
                   <th class="history-risk-col">Risk</th>
                   <th class="history-class-col">Classification</th>
                   <th class="history-time-col">Timestamp</th>
@@ -123,35 +123,37 @@
               <tbody id="historyTableBody"></tbody>
             </table>
           </div>
+          <div id="detailOverlay" class="history-detail-overlay" hidden>
+            <div id="detailOverlayBackdrop" class="history-detail-backdrop"></div>
+            <div class="history-detail-panel">
+              <div class="section-header">
+                <h3>Detailed Analysis</h3>
+                <button id="closeDetailBtn" class="btn ghost">Close</button>
+              </div>
+              <div id="detailPanel" class="muted">Select a scan record to inspect its analysis.</div>
+            </div>
+          </div>
         </div>
 
-        <div class="grid grid-2">
-          <div class="card">
-            <h3>Risk Trends</h3>
-            <div id="trendChart" class="chart-bars"></div>
-          </div>
-          <div class="card">
-            <h3>Top Risky Domains</h3>
-            <div id="topDomains"></div>
-          </div>
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>Risk Trends</h3>
+          <div id="trendChart" class="chart-bars"></div>
         </div>
-
-        <div class="grid grid-2">
-          <div class="card">
-            <h3>Weekly Summary</h3>
-            <div id="weeklySummary"></div>
-          </div>
-          <div class="card">
-            <h3>Personal Security Insights</h3>
-            <div id="securityInsights"></div>
-          </div>
+        <div class="card">
+          <h3>Top Risky Domains</h3>
+          <div id="topDomains"></div>
         </div>
       </div>
 
-      <div class="stack">
-        <div class="card detail-card">
-          <h3>Detailed Analysis</h3>
-          <div id="detailPanel" class="muted">Select a scan record to inspect its analysis.</div>
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>Weekly Summary</h3>
+          <div id="weeklySummary"></div>
+        </div>
+        <div class="card">
+          <h3>Personal Security Insights</h3>
+          <div id="securityInsights"></div>
         </div>
       </div>
     </div>
