@@ -109,9 +109,14 @@ def extract_basic_features(url):
 
 def predict_url(url):
     emb = minilm_model.encode([url], show_progress_bar=False)
-    feat = np.array(list(extract_basic_features(url).values())).reshape(1, -1)
-    pad = np.zeros((1, scaler.mean_.shape[0] - feat.shape[1]))
-    num_scaled = np.hstack([feat, pad])
+    feat = np.array(list(extract_basic_features(url).values()), dtype=np.float32).reshape(1, -1)
+    numeric_feature_count = int(getattr(scaler, "n_features_in_", len(scaler.mean_)))
+    if feat.shape[1] > numeric_feature_count:
+        feat = feat[:, :numeric_feature_count]
+
+    pad = np.zeros((1, numeric_feature_count - feat.shape[1]), dtype=np.float32)
+    numeric_features = np.hstack([feat, pad])
+    num_scaled = scaler.transform(numeric_features)
     X_hybrid = np.hstack([emb, num_scaled])
 
     prob = rf_model.predict_proba(X_hybrid)[0][1]
