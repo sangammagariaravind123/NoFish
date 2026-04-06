@@ -16,6 +16,7 @@ from playwright.sync_api import sync_playwright  # pyright: ignore[reportMissing
 def extract_all_features(url):
     try:
         with sync_playwright() as p:
+
             browser = p.chromium.launch(headless=True)
             context = browser.new_context()
             page = context.new_page()
@@ -448,7 +449,6 @@ def extract_all_features(url):
         features["iframe"] = 1 if len(iframes) > 0 else 0
 
     except:
-        features["iframe"] = 0
         features["iframe"] = 0
 
     # ============== 8. Statistical Features (11 features) ==============
