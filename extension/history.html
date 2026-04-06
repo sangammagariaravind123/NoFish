@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>PhishGuard Full History</title>
+  <link rel="stylesheet" href="styles/shared.css">
+  <style>
+    .filters {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      margin-bottom: 12px;
+    }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page-shell stack">
+    <div class="topbar">
+      <div>
+        <h1>Full History View</h1>
+        <p class="muted">Browse your complete scan history with the same filters, details, and insights.</p>
+      </div>
+      <div class="toolbar-actions">
+        <button id="refreshBtn" class="btn secondary">Refresh</button>
+        <button id="openDashboardBtn" class="btn ghost">Dashboard</button>
+        <button id="openSettingsBtn" class="btn ghost">Settings</button>
+      </div>
+    </div>
+    <div id="refreshProgress" class="progress-shell">
+      <div class="progress-bar"></div>
+    </div>
+
+    <div class="card stack">
+      <div class="muted">Use filters to inspect your complete history without the dashboard’s 10-entry preview limit.</div>
+      <div id="historyStatusMessage" class="muted"></div>
+    </div>
+
+    <div class="stack">
+      <div class="card summary-card history-card">
+        <div class="section-header">
+          <h3>History Filters</h3>
+          <button id="clearHistoryBtn" class="btn ghost">Clear All</button>
+        </div>
+        <div class="filters">
+          <div class="field">
+            <label for="classificationFilter">Classification</label>
+            <select id="classificationFilter">
+              <option value="all">All</option>
+              <option value="Safe">Safe</option>
+              <option value="Suspicious">Suspicious</option>
+              <option value="Phishing">Phishing</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="recentFilter">Time Window</label>
+            <select id="recentFilter">
+              <option value="all">All time</option>
+              <option value="7">Last 7 days</option>
+              <option value="1">Last 24 hours</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="searchInput">Search URL / domain</label>
+            <input id="searchInput" type="text" placeholder="Search history">
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th class="history-url-col">URL</th>
+                <th class="history-source-col">Source</th>
+                <th class="history-risk-col">Risk</th>
+                <th class="history-class-col">Classification</th>
+                <th class="history-time-col">Timestamp</th>
+                <th class="history-action-col">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="historyTableBody"></tbody>
+          </table>
+        </div>
+        <div class="history-footer">
+          <div id="historySummary" class="muted">Showing full history.</div>
+        </div>
+        <div id="detailOverlay" class="history-detail-overlay" hidden>
+          <div id="detailOverlayBackdrop" class="history-detail-backdrop"></div>
+          <div class="history-detail-panel">
+            <div class="section-header">
+              <h3>Detailed Analysis</h3>
+              <button id="closeDetailBtn" class="btn ghost">Close</button>
+            </div>
+            <div id="detailPanel" class="muted">Select a scan record to inspect its analysis.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="history.js"></script>
+</body>
+</html>
