@@ -97,7 +97,7 @@ def compute_rule_score(url):
     return score / 5, rules
 
 
-def extract_basic_features(url):
+def extract_features(url):
     u = str(url)
     return {
         "length_url": len(u),

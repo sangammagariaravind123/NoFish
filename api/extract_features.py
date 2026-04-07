@@ -559,4 +559,4 @@ if __name__ == "__main__":
     print(df_features.head())
 
     # Save to CSV if needed
-    # df_features.to_csv("extracted_features.csv", index=False)
+    df_features.to_csv("extracted_features_sample.csv", index=False)
