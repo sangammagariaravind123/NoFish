@@ -12,7 +12,8 @@ from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 
 from sandbox import analyze_url
-from behavioral_transformer import BehavioralPredictor
+
+# from behavioral_transformer import BehavioralPredictor
 from extract_features import extract_basic_features
 
 
@@ -109,7 +110,9 @@ def extract_basic_features(url):
 
 def predict_url(url):
     emb = minilm_model.encode([url], show_progress_bar=False)
-    feat = np.array(list(extract_basic_features(url).values()), dtype=np.float32).reshape(1, -1)
+    feat = np.array(
+        list(extract_basic_features(url).values()), dtype=np.float32
+    ).reshape(1, -1)
     numeric_feature_count = int(getattr(scaler, "n_features_in_", len(scaler.mean_)))
     if feat.shape[1] > numeric_feature_count:
         feat = feat[:, :numeric_feature_count]
