@@ -12,21 +12,24 @@ import requests
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright  # pyright: ignore[reportMissingImports]
 
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
 
 def extract_all_features(url):
-    try:
-        with sync_playwright() as p:
 
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context()
-            page = context.new_page()
+    with sync_playwright() as p:
 
-            page.goto(url, wait_until="load")
-
-            base_domain = urlparse(url).netloc
-            features = {}
-    except Exception as e:
-        raise e
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context()
+        page = context.new_page()
+        try:
+            page.goto(url, wait_until="load", timeout=10000)
+            load_success = True
+        except PlaywrightTimeoutError:
+            load_success = False
+        except Exception as e:
+            print(f"Error processing {url}: {e}")
+            load_success = False
 
         # 👉 ADD FEATURES HERE
     """
@@ -434,7 +437,7 @@ def extract_all_features(url):
 
         for link in links:
             href = link.get_attribute("href")
-            if href and base_domain not in href:
+            if href and hostname not in href:
                 external_links += 1
 
         features["external_links"] = external_links
