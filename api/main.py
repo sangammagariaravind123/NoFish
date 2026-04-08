@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 
 from sandbox import analyze_url
-from extract_features import extract_basic_features, extract_domain_parts
+from extract_features import extract_features, extract_domain_parts
 
 # from behavioral_transformer import BehavioralPredictor
 
@@ -121,10 +121,23 @@ def compute_rule_score(url):
         score += 1
         rules.append("Shortener")
     return score / 5, rules
+
+
+def extract_features(url):
+    u = str(url)
+    return {
+        "length_url": len(u),
+        "nb_dots": u.count("."),
+        "nb_hyphens": u.count("-"),
+        "https_token": 1 if "https" in u.lower() else 0,
+        "ratio_digits_url": sum(c.isdigit() for c in u) / len(u) if len(u) > 0 else 0,
+    }
+
+
 def predict_url(url):
     emb = minilm_model.encode([url], show_progress_bar=False)
     feat = np.array(
-        list(extract_basic_features(url).values()), dtype=np.float32
+        list(extract_features(url).values()), dtype=np.float32
     ).reshape(1, -1)
     numeric_feature_count = int(getattr(scaler, "n_features_in_", len(scaler.mean_)))
     if feat.shape[1] > numeric_feature_count:

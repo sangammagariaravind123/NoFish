@@ -71,7 +71,7 @@ def _encode_tld(suffix: str) -> int:
     return sum(ord(char) for char in suffix)
 
 
-def extract_basic_features(url):
+def extract_features(url):
     """
     Deterministic handcrafted URL features for the L1+L2 path.
     Returns the numeric 87-feature vector expected by the scaler/RF assets.
@@ -214,7 +214,7 @@ def extract_basic_features(url):
 
 
 def extract_all_features(url):
-    return extract_basic_features(url)
+    return extract_features(url)
 
 
 def extract_features_batch(urls):
@@ -241,3 +241,6 @@ if __name__ == "__main__":
     print(f"Features: {df_features.columns.tolist()}")
     print("\nFirst few rows:")
     print(df_features.head())
+
+    # Save to CSV if needed
+    df_features.to_csv("extracted_features_sample.csv", index=False)
