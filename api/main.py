@@ -14,10 +14,7 @@ from sandbox import analyze_url
 from extract_features import extract_features, extract_domain_parts
 
 # from behavioral_transformer import BehavioralPredictor
-<<<<<<< HEAD
-=======
 from extract_features import extract_all_features
->>>>>>> 4716ecd80347080962ca89dbe9b9ce45d8f55f4c
 
 
 API_DIR = os.path.dirname(__file__)
