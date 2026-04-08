@@ -14,7 +14,7 @@ from sentence_transformers import SentenceTransformer
 from sandbox import analyze_url
 
 # from behavioral_transformer import BehavioralPredictor
-from extract_features import extract_basic_features
+from extract_features import extract_all_features
 
 
 API_DIR = os.path.dirname(__file__)
