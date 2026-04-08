@@ -6,12 +6,12 @@ import sys
 import joblib
 import numpy as np
 import pandas as pd
-import tldextract
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 
 from sandbox import analyze_url
+from extract_features import extract_basic_features, extract_domain_parts
 
 # from behavioral_transformer import BehavioralPredictor
 from extract_features import extract_all_features
@@ -29,13 +29,43 @@ def project_path(*parts: str) -> str:
     return os.path.join(PROJECT_ROOT, *parts)
 
 
+def resolve_minilm_source() -> tuple[str, bool]:
+    snapshot_root = os.path.expanduser(
+        "~/.cache/huggingface/hub/models--sentence-transformers--all-MiniLM-L6-v2/snapshots"
+    )
+    if os.path.isdir(snapshot_root):
+        snapshots = sorted(
+            (
+                os.path.join(snapshot_root, name)
+                for name in os.listdir(snapshot_root)
+                if os.path.isdir(os.path.join(snapshot_root, name))
+            ),
+            key=os.path.getmtime,
+            reverse=True,
+        )
+        for snapshot in snapshots:
+            required_paths = (
+                "modules.json",
+                "config_sentence_transformers.json",
+                "1_Pooling",
+            )
+            if all(
+                os.path.exists(os.path.join(snapshot, rel_path))
+                for rel_path in required_paths
+            ):
+                return snapshot, True
+    return "all-MiniLM-L6-v2", False
+
+
 # --- Load the trained models ---
 rf_model = joblib.load(project_path("api", "rf_hybrid_minilm.pkl"))
 scaler = joblib.load(project_path("api", "scaler_hybrid.pkl"))
 behavioral_model = BehavioralPredictor(project_path("api", "behavior_transformer.pt"))
+rf_model.n_jobs = 1
 
 # --- Load the MiniLM model ---
-minilm_model = SentenceTransformer("all-MiniLM-L6-v2")
+minilm_source, use_local_only = resolve_minilm_source()
+minilm_model = SentenceTransformer(minilm_source, local_files_only=use_local_only)
 
 # --- Rule engine (same as in your app) ---
 SUSPICIOUS_TLDS = [
@@ -78,7 +108,7 @@ URL_SHORTENERS = [
 def compute_rule_score(url):
     score = 0
     rules = []
-    ext = tldextract.extract(url)
+    ext = extract_domain_parts(url)
     if ext.suffix in SUSPICIOUS_TLDS:
         score += 1
         rules.append("Suspicious_TLD")
@@ -97,17 +127,6 @@ def compute_rule_score(url):
     return score / 5, rules
 
 
-def extract_features(url):
-    u = str(url)
-    return {
-        "length_url": len(u),
-        "nb_dots": u.count("."),
-        "nb_hyphens": u.count("-"),
-        "https_token": 1 if "https" in u.lower() else 0,
-        "ratio_digits_url": sum(c.isdigit() for c in u) / len(u) if len(u) > 0 else 0,
-    }
-
-
 def predict_url(url):
     emb = minilm_model.encode([url], show_progress_bar=False)
     feat = np.array(
@@ -117,8 +136,11 @@ def predict_url(url):
     if feat.shape[1] > numeric_feature_count:
         feat = feat[:, :numeric_feature_count]
 
-    pad = np.zeros((1, numeric_feature_count - feat.shape[1]), dtype=np.float32)
+    pad = np.zeros((1, max(0, numeric_feature_count - feat.shape[1])), dtype=np.float32)
     numeric_features = np.hstack([feat, pad])
+    if numeric_features.shape[1] > numeric_feature_count:
+        numeric_features = numeric_features[:, :numeric_feature_count]
+
     num_scaled = scaler.transform(numeric_features)
     X_hybrid = np.hstack([emb, num_scaled])
 
