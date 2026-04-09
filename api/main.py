@@ -14,10 +14,7 @@ from sandbox import analyze_url
 from extract_features import extract_features, extract_domain_parts
 
 # from behavioral_transformer import BehavioralPredictor
-<<<<<<< HEAD
-=======
 from extract_features import extract_all_features
->>>>>>> 4716ecd80347080962ca89dbe9b9ce45d8f55f4c
 
 
 API_DIR = os.path.dirname(__file__)
@@ -52,7 +49,10 @@ def resolve_minilm_source() -> tuple[str, bool]:
                 "config_sentence_transformers.json",
                 "1_Pooling",
             )
-            if all(os.path.exists(os.path.join(snapshot, rel_path)) for rel_path in required_paths):
+            if all(
+                os.path.exists(os.path.join(snapshot, rel_path))
+                for rel_path in required_paths
+            ):
                 return snapshot, True
     return "all-MiniLM-L6-v2", False
 
@@ -140,9 +140,9 @@ def extract_features(url):
 
 def predict_url(url):
     emb = minilm_model.encode([url], show_progress_bar=False)
-    feat = np.array(
-        list(extract_features(url).values()), dtype=np.float32
-    ).reshape(1, -1)
+    feat = np.array(list(extract_features(url).values()), dtype=np.float32).reshape(
+        1, -1
+    )
     numeric_feature_count = int(getattr(scaler, "n_features_in_", len(scaler.mean_)))
     if feat.shape[1] > numeric_feature_count:
         feat = feat[:, :numeric_feature_count]
