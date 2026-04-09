@@ -129,9 +129,15 @@ def compute_rule_score(url):
 
 def predict_url(url):
     emb = minilm_model.encode([url], show_progress_bar=False)
+<<<<<<< HEAD
     feat = np.array(
         list(extract_basic_features(url).values()), dtype=np.float32
     ).reshape(1, -1)
+=======
+    feat = np.array(list(extract_features(url).values()), dtype=np.float32).reshape(
+        1, -1
+    )
+>>>>>>> 0e4c43e (v6.4.3 added dataset file)
     numeric_feature_count = int(getattr(scaler, "n_features_in_", len(scaler.mean_)))
     if feat.shape[1] > numeric_feature_count:
         feat = feat[:, :numeric_feature_count]
