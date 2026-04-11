@@ -11,10 +11,10 @@ from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 
 from sandbox import analyze_url
-from extract_features import extract_features, extract_domain_parts
+from extraction import extract_features, extract_domain_parts
 
 # from behavioral_transformer import BehavioralPredictor
-from extract_features import extract_all_features
+from extraction import extract_all_features
 
 
 API_DIR = os.path.dirname(__file__)
@@ -81,8 +81,10 @@ SUSPICIOUS_TLDS = [
     "zip",
     "link",
     "cn",
+    "nz",
 ]
 PHISHING_KEYWORDS = [
+    "KYC",
     "login",
     "verify",
     "update",
@@ -127,15 +129,15 @@ def compute_rule_score(url):
     return score / 5, rules
 
 
-def extract_features(url):
-    u = str(url)
-    return {
-        "length_url": len(u),
-        "nb_dots": u.count("."),
-        "nb_hyphens": u.count("-"),
-        "https_token": 1 if "https" in u.lower() else 0,
-        "ratio_digits_url": sum(c.isdigit() for c in u) / len(u) if len(u) > 0 else 0,
-    }
+# def extract_features(url):
+#     u = str(url)
+#     return {
+#         "length_url": len(u),
+#         "nb_dots": u.count("."),
+#         "nb_hyphens": u.count("-"),
+#         "https_token": 1 if "https" in u.lower() else 0,
+#         "ratio_digits_url": sum(c.isdigit() for c in u) / len(u) if len(u) > 0 else 0,
+#     }
 
 
 def predict_url(url):
