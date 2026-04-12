@@ -217,6 +217,34 @@
       border-radius: 6px;
     }
 
+    .result-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 8px;
+    }
+
+    .result-toolbar button {
+      width: auto;
+      margin-top: 0;
+    }
+
+    .screenshot-view {
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .screenshot-view.active {
+      display: flex;
+    }
+
+    .screenshot-image {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid #d3dce6;
+      background: white;
+    }
+
     mark {
       background: #fde68a;
       padding: 0 2px;
@@ -253,9 +281,14 @@
 
   <div class="card">
     <div id="result">Loading...</div>
+    <div id="sandboxScreenshotView" class="screenshot-view">
+      <button id="backToResultBtn" class="ghost-btn">Back</button>
+      <img id="sandboxScreenshotImage" class="screenshot-image" alt="Sandbox scanned site screenshot">
+      <button id="openFullScreenshotBtn" class="secondary-btn">Show Full Image</button>
+    </div>
     <button id="deepScanBtn">Deep Scan (Sandbox)</button>
     <div id="loading" class="loading">Analyzing in sandbox... please wait ~10 seconds</div>
-    <div class="auth-row">
+    <div id="resultActionsRow" class="auth-row">
       <button id="whyBtn" class="why-btn" style="display:none;">Show Why</button>
       <button id="explainModeBtn" class="ghost-btn">Mode: Simple</button>
     </div>

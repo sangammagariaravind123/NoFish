@@ -5,6 +5,7 @@ import io
 import os
 import re
 import sys
+from urllib.parse import urlparse
 
 import joblib
 import matplotlib
@@ -12,6 +13,7 @@ import numpy as np
 import pandas as pd
 import shap
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 
@@ -119,6 +121,7 @@ def compute_rule_score(url: str):
     rules = []
     ext = extract_domain_parts(url)
     normalized_url = url.lower()
+    hostname = (urlparse(url).hostname or "").lower().lstrip("www.")
 
     if ext.suffix in SUSPICIOUS_TLDS:
         score += 1
@@ -132,8 +135,11 @@ def compute_rule_score(url: str):
     if any(keyword in normalized_url for keyword in PHISHING_KEYWORDS):
         score += 1
         rules.append("Keyword_match")
-    if any(shortener in normalized_url for shortener in URL_SHORTENERS):
-        score += 1
+    if any(
+        hostname == shortener or hostname.endswith(f".{shortener}")
+        for shortener in URL_SHORTENERS
+    ):
+        score += 2
         rules.append("Shortener")
     if re.search(r"\d", ext.domain or ""):
         score += 1
@@ -164,16 +170,24 @@ def predict_url(url: str):
     X_hybrid, _feature_map = build_hybrid_features(url)
     prob = rf_model.predict_proba(X_hybrid)[0][1]
     rule_score, rules = compute_rule_score(url)
+    rule_count = len(rules)
 
-    trust_index = 0.6 * prob + 0.4 * (1 - rule_score)
+    risk_score = 0.65 * prob + 0.35 * rule_score
+    trust_index = 1 - risk_score
     trust_index = max(0.0, min(1.0, trust_index))
 
-    if trust_index >= 0.6:
-        risk = "Safe"
-    elif trust_index >= 0.4:
+    if rule_count >= 3:
+        risk = "Phishing"
+    elif rule_count >= 2 and prob >= 0.65:
+        risk = "Phishing"
+    elif rule_count >= 1:
+        risk = "Phishing" if risk_score >= 0.72 else "Suspicious"
+    elif prob >= 0.78:
+        risk = "Phishing"
+    elif risk_score >= 0.48:
         risk = "Suspicious"
     else:
-        risk = "Phishing"
+        risk = "Safe"
 
     return {
         "trust_index": trust_index,
@@ -309,6 +323,29 @@ async def deep_scan(request: URLRequest):
             "other_requests": sandbox_result.get("other_requests", 0),
         }
 
+        if not sandbox_result.get("sandbox_accessible", True):
+            blocked_reason = sandbox_result.get(
+                "sandbox_blocked_reason",
+                "Sandbox could not access the real site content",
+            )
+            explanation = "Sandbox could not access the real site content."
+
+            return {
+                "scanned_url": request.url,
+                "final_risk": "Unknown",
+                "final_trust_index": None,
+                "l1l2": l1l2_result,
+                "sandbox": {
+                    "behavioral_prob": None,
+                    "behavioral_features": behavioral_features,
+                    "raw_output": sandbox_result,
+                    "model_type": "transformer",
+                    "sandbox_accessible": False,
+                    "blocked_reason": blocked_reason,
+                },
+                "explanation": explanation,
+            }
+
         behavioral_prob = float(behavioral_model.predict_proba(behavioral_features)[0])
 
         if behavioral_prob > 0.6:
@@ -331,6 +368,8 @@ async def deep_scan(request: URLRequest):
                 "behavioral_features": behavioral_features,
                 "raw_output": sandbox_result,
                 "model_type": "transformer",
+                "sandbox_accessible": True,
+                "blocked_reason": None,
             },
             "explanation": explanation,
         }
@@ -355,3 +394,11 @@ async def root():
     return {
         "message": "PhishGuard API is running. Use POST /predict with JSON { 'url': '...' }"
     }
+
+
+@app.get("/sandbox_shot")
+async def sandbox_shot():
+    screenshot_path = project_path("api", "shot.png")
+    if not os.path.exists(screenshot_path):
+        raise HTTPException(status_code=404, detail="Sandbox screenshot not found")
+    return FileResponse(screenshot_path, media_type="image/png")

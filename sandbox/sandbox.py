@@ -14,6 +14,21 @@ REALISTIC_USER_AGENT = (
 )
 DEFAULT_VIEWPORT = {"width": 1440, "height": 900}
 POST_LOAD_WAIT_MS = 1500
+BLOCK_KEYWORD_RULES = (
+    ("access denied", "Access denied page"),
+    ("forbidden", "Forbidden response page"),
+    ("request blocked", "Request blocked page"),
+    ("bot detected", "Bot-detection page"),
+    ("attention required", "Anti-bot challenge page"),
+    ("verify you are human", "Human verification challenge"),
+    ("captcha", "CAPTCHA / challenge page"),
+    ("cf-chl", "Cloudflare challenge page"),
+    ("cdn-cgi/challenge-platform", "Cloudflare challenge page"),
+    ("that link could not be found", "Invalid or unresolved page"),
+    ("this site can’t be reached", "Browser error page"),
+    ("this site can't be reached", "Browser error page"),
+    ("err_name_not_resolved", "Browser DNS error page"),
+)
 
 def is_ip(url):
     return re.match(r"https?://\d+\.\d+\.\d+\.\d+", url) is not None
@@ -23,6 +38,40 @@ def get_domain(url):
         return urlparse(url).netloc
     except:
         return ""
+
+
+def detect_inaccessible_page(result, page_title="", html="", final_url=""):
+    title_lower = (page_title or "").strip().lower()
+    html_lower = (html or "").lower()
+    final_url_lower = (final_url or "").lower()
+
+    matched_reasons = []
+    for needle, reason in BLOCK_KEYWORD_RULES:
+        if needle in title_lower or needle in html_lower or needle in final_url_lower:
+            matched_reasons.append(reason)
+
+    doc_only = (
+        result["document_requests"] == 1
+        and result["script_requests"] == 0
+        and result["stylesheet_requests"] == 0
+        and result["image_requests"] == 0
+        and result["font_requests"] == 0
+        and result["xhr_fetch_requests"] == 0
+        and result["other_requests"] == 0
+    )
+    suspicious_status = result.get("main_response_status") in {401, 403, 429, 503}
+    has_low_info_scan = result["total_requests"] <= 3 or doc_only
+    very_small_page = result.get("html_length", 0) <= 12000
+
+    if matched_reasons:
+        reason = matched_reasons[0]
+        if suspicious_status or (has_low_info_scan and very_small_page):
+            return True, reason
+
+    if suspicious_status and has_low_info_scan and very_small_page:
+        return True, f"HTTP {result['main_response_status']} access-control response"
+
+    return False, None
 
 def analyze_url(url):
     result = {
@@ -46,6 +95,10 @@ def analyze_url(url):
         "timeout_flag": 0,
         "page_title": "",
         "html_length": 0,
+        "main_response_status": None,
+        "sandbox_accessible": True,
+        "denial_detected": False,
+        "sandbox_blocked_reason": None,
 
         # request types
         "document_requests": 0,
@@ -138,7 +191,9 @@ def analyze_url(url):
         page.on("request", handle_request)
 
         try:
-            page.goto(url, wait_until="domcontentloaded")
+            response = page.goto(url, wait_until="domcontentloaded")
+            if response is not None:
+                result["main_response_status"] = response.status
 
             # wait for dynamic content
             page.wait_for_timeout(POST_LOAD_WAIT_MS)
@@ -156,10 +211,21 @@ def analyze_url(url):
             page.screenshot(path=screenshot_path)
             result["final_url"] = page.url
             result["page_title"] = page.title() or ""
-            result["html_length"] = len(page.content() or "")
+            html = page.content() or ""
+            result["html_length"] = len(html)
 
             if result["final_url"] and result["final_url"] != url:
                 result["final_url_differs"] = 1
+
+            denial_detected, blocked_reason = detect_inaccessible_page(
+                result,
+                result["page_title"],
+                html,
+                result["final_url"],
+            )
+            result["denial_detected"] = denial_detected
+            result["sandbox_accessible"] = not denial_detected
+            result["sandbox_blocked_reason"] = blocked_reason
 
         except Exception as e:
             result["error"] = str(e)
@@ -168,6 +234,10 @@ def analyze_url(url):
             if "Timeout" in str(e) or "timeout" in str(e):
                 result["timeout_flag"] = 1
                 result["skipped_due_to_timeout"] = True
+
+            result["sandbox_accessible"] = True
+            result["denial_detected"] = False
+            result["sandbox_blocked_reason"] = None
 
         browser.close()
 
