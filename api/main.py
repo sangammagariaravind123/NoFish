@@ -2,7 +2,7 @@
 import asyncio
 import os
 import sys
-
+import re
 import joblib
 import numpy as np
 import pandas as pd
@@ -16,7 +16,7 @@ from extract_features import extract_basic_features, extract_domain_parts
 # from behavioral_transformer import BehavioralPredictor
 from extract_features import extract_all_features
 
-
+domain_parts = None
 API_DIR = os.path.dirname(__file__)
 PROJECT_ROOT = os.path.dirname(API_DIR)
 if PROJECT_ROOT not in sys.path:
@@ -124,16 +124,24 @@ def compute_rule_score(url):
     if any(short in url.lower() for short in URL_SHORTENERS):
         score += 1
         rules.append("Shortener")
-    return score / 5, rules
+    if re.search(r"\d", domain_parts.domain):
+        score += 1
+        rules.append("digits_in_domain")
+    return score / 6, rules
 
 
 def predict_url(url):
     emb = minilm_model.encode([url], show_progress_bar=False)
 <<<<<<< HEAD
+<<<<<<< HEAD
     feat = np.array(
         list(extract_basic_features(url).values()), dtype=np.float32
     ).reshape(1, -1)
 =======
+=======
+    global domain_parts
+    extract, domain_parts = extract_features(url)
+>>>>>>> 43d41b7 (v6.4.5 added rule)
     feat = np.array(list(extract_features(url).values()), dtype=np.float32).reshape(
         1, -1
     )

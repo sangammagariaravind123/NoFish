@@ -52,7 +52,32 @@ SUSPICIOUS_QUERY_PARAMS = {
     "next",
     "forward",
 }
+<<<<<<< HEAD:api/extract_features.py
 TRUSTED_BRANDS = {"google", "facebook", "amazon"}
+=======
+TRUSTED_BRANDS = {
+    "google",
+    "facebook",
+    "amazon",
+    "netflix",
+    "apple",
+    "microsoft",
+    "twitter",
+    "linkedin",
+    "github",
+    "paypal",
+    "dropbox",
+    "salesforce",
+    "adobe",
+    "spotify",
+    "airbnb",
+    "uber",
+    "lyft",
+    "slack",
+    "zoom",
+    "stripe",
+}
+>>>>>>> 43d41b7 (v6.4.5 added rule):api/extraction.py
 
 
 def extract_domain_parts(url: str):
@@ -236,7 +261,7 @@ def extract_basic_features(url):
         1 for pattern in suspicious_patterns if re.search(pattern, full_url)
     )
 
-    return features
+    return features, domain_parts
 
 
 def extract_all_features(url):
