@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import shap
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 
@@ -369,3 +370,11 @@ async def root():
     return {
         "message": "PhishGuard API is running. Use POST /predict with JSON { 'url': '...' }"
     }
+
+
+@app.get("/sandbox_shot")
+async def sandbox_shot():
+    screenshot_path = project_path("api", "shot.png")
+    if not os.path.exists(screenshot_path):
+        raise HTTPException(status_code=404, detail="Sandbox screenshot not found")
+    return FileResponse(screenshot_path, media_type="image/png")

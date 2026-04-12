@@ -6,6 +6,7 @@ import { getLocal, setLocal } from "./lib/storage.js";
 import { classificationClass, formatPercent, openExtensionPage, safeText } from "./lib/ui-utils.js";
 
 const DEEP_SCAN_EXPIRY = 5 * 60 * 1000;
+const SANDBOX_SHOT_URL = "http://localhost:8000/sandbox_shot";
 let authFormMode = null;
 
 function normalizePopupResultRecord(record) {
@@ -282,7 +283,44 @@ async function renderExplanationBox(result, isDeepScan) {
   `;
 }
 
+function showSandboxScreenshot() {
+  const resultBox = document.getElementById("result");
+  const screenshotView = document.getElementById("sandboxScreenshotView");
+  const screenshotImage = document.getElementById("sandboxScreenshotImage");
+  const deepScanBtn = document.getElementById("deepScanBtn");
+  const loadingDiv = document.getElementById("loading");
+  const explanationBox = document.getElementById("explanationBox");
+  const actionRow = document.getElementById("resultActionsRow");
+
+  screenshotImage.src = `${SANDBOX_SHOT_URL}?t=${Date.now()}`;
+  resultBox.style.display = "none";
+  screenshotView.classList.add("active");
+  deepScanBtn.style.display = "none";
+  loadingDiv.style.display = "none";
+  explanationBox.style.display = "none";
+  actionRow.style.display = "none";
+}
+
+function hideSandboxScreenshot() {
+  const resultBox = document.getElementById("result");
+  const screenshotView = document.getElementById("sandboxScreenshotView");
+  const screenshotImage = document.getElementById("sandboxScreenshotImage");
+  const deepScanBtn = document.getElementById("deepScanBtn");
+  const actionRow = document.getElementById("resultActionsRow");
+
+  screenshotView.classList.remove("active");
+  screenshotImage.removeAttribute("src");
+  resultBox.style.display = "";
+  deepScanBtn.style.display = "";
+  actionRow.style.display = "";
+}
+
+function openFullSandboxScreenshot() {
+  window.open(`${SANDBOX_SHOT_URL}?t=${Date.now()}`, "_blank", "noopener,noreferrer");
+}
+
 async function displayResult(result, isDeepScan = false) {
+  hideSandboxScreenshot();
   const container = document.getElementById("result");
   const whyBtn = document.getElementById("whyBtn");
   const explanationBox = document.getElementById("explanationBox");
@@ -302,6 +340,7 @@ async function displayResult(result, isDeepScan = false) {
     const blockedReason = result.sandbox?.raw_output?.sandbox_blocked_reason || result.sandbox?.blocked_reason;
 
     container.innerHTML = `
+      <div class="result-toolbar"><button id="showSandboxShotBtn" class="ghost-btn compact-btn">Show Scanned URL</button></div>
       <div class="risk ${classificationClass(risk)}">Risk: <strong>${safeText(risk)}</strong></div>
       <div class="trust">Trust Index: ${trustIndex == null ? "N/A" : `${(trustIndex * 100).toFixed(1)}%`}</div>
       ${inaccessible ? `<div class="detail-block compact"><strong>Sandbox can't access this site.</strong>${blockedReason ? `<br>${safeText(blockedReason)}` : ""}</div>` : ""}
@@ -317,6 +356,7 @@ async function displayResult(result, isDeepScan = false) {
     whyBtn.style.display = "block";
     whyBtn.textContent = "Show Why";
     explanationBox.style.display = "none";
+    document.getElementById("showSandboxShotBtn")?.addEventListener("click", showSandboxScreenshot);
     await renderExplanationBox(result, true);
     return;
   }
@@ -459,6 +499,8 @@ async function initializePopup() {
   document.getElementById("deepScanBtn").addEventListener("click", runDeepScan);
   document.getElementById("whyBtn").addEventListener("click", toggleExplanation);
   document.getElementById("explainModeBtn").addEventListener("click", toggleExplainMode);
+  document.getElementById("backToResultBtn").addEventListener("click", hideSandboxScreenshot);
+  document.getElementById("openFullScreenshotBtn").addEventListener("click", openFullSandboxScreenshot);
   document.getElementById("cancelAuthBtn").addEventListener("click", () => setAuthFormMode(null));
   document.getElementById("loginBtn").addEventListener("click", () => handleEmailAuth("login"));
   document.getElementById("signupBtn").addEventListener("click", () => handleEmailAuth("signup"));
