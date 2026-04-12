@@ -7,3 +7,8 @@ sandbox/__pycache__/
 sandbox/results_mass.json
 api/venv
 node_modules/
+<<<<<<< HEAD
+=======
+api/__pycache__/
+__pycache__/
+>>>>>>> 73d4355 (v6.4.5)
