@@ -139,6 +139,13 @@ select {
   box-shadow: none;
 }
 
+.btn.active {
+  background: #173f7a;
+  color: #ffffff;
+  border-color: #173f7a;
+  font-weight: 700;
+}
+
 .stack {
   display: flex;
   flex-direction: column;
@@ -197,6 +204,10 @@ table {
 
 .history-url-col {
   width: auto;
+}
+
+.history-select-col {
+  width: 68px;
 }
 
 .history-risk-col {
@@ -410,6 +421,16 @@ tbody tr:hover {
   border-radius: 999px;
   background: #edf2f7;
   font-size: 12px;
+}
+
+.history-select-cell {
+  vertical-align: middle;
+}
+
+.history-select-checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
 }
 
 .shap-graph-image {

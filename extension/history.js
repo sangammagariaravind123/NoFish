@@ -9,7 +9,8 @@ function setHistoryMessage(message, isError = false) {
 }
 
 const historyView = createHistoryView({
-  setMessage: setHistoryMessage
+  setMessage: setHistoryMessage,
+  enableBulkSelection: true
 });
 
 async function initializeHistoryPage() {

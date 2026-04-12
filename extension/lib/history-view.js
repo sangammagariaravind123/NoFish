@@ -21,11 +21,14 @@ import {
 export function createHistoryView({
   limit = null,
   setMessage = () => {},
-  showMorePath = null
+  showMorePath = null,
+  enableBulkSelection = false
 } = {}) {
   let historyRecords = [];
   let selectedHistoryRecord = null;
   let detailRequestId = 0;
+  let selectionMode = false;
+  let selectedRecordKeys = new Set();
 
   function withTimeout(promise, milliseconds, label) {
     return Promise.race([
@@ -129,6 +132,61 @@ export function createHistoryView({
     button.style.display = Number.isInteger(limit) && filteredHistory.length > limit ? "inline-flex" : "inline-flex";
   }
 
+  function getRecordKey(record) {
+    return `${record.historySource || "local"}|${record.id || ""}|${record.url || ""}|${record.timestamp || ""}`;
+  }
+
+  function clearSelection() {
+    selectedRecordKeys = new Set();
+  }
+
+  function isRecordSelected(record) {
+    return selectedRecordKeys.has(getRecordKey(record));
+  }
+
+  function toggleRecordSelection(record) {
+    const key = getRecordKey(record);
+    if (selectedRecordKeys.has(key)) {
+      selectedRecordKeys.delete(key);
+    } else {
+      selectedRecordKeys.add(key);
+    }
+  }
+
+  function setSelectionMode(active) {
+    selectionMode = active;
+    if (!active) {
+      clearSelection();
+    }
+  }
+
+  function updateSelectionControls(visibleHistory) {
+    if (!enableBulkSelection) return;
+
+    const selectButton = document.getElementById("toggleSelectModeBtn");
+    const selectAllButton = document.getElementById("selectAllBtn");
+    const deleteSelectedButton = document.getElementById("deleteSelectedBtn");
+    const selectHeader = document.getElementById("historySelectHeader");
+
+    if (selectButton) {
+      selectButton.classList.toggle("active", selectionMode);
+    }
+
+    if (selectHeader) {
+      selectHeader.style.display = selectionMode ? "" : "none";
+    }
+
+    if (!selectAllButton || !deleteSelectedButton) return;
+
+    selectAllButton.style.display = selectionMode ? "inline-flex" : "none";
+    deleteSelectedButton.style.display = selectionMode ? "inline-flex" : "none";
+
+    const selectableKeys = visibleHistory.map(getRecordKey);
+    const allSelected = selectableKeys.length > 0 && selectableKeys.every((key) => selectedRecordKeys.has(key));
+    selectAllButton.textContent = allSelected ? "Deselect All" : "Select All";
+    deleteSelectedButton.disabled = selectedRecordKeys.size === 0;
+  }
+
   function openDetailOverlay() {
     const overlay = document.getElementById("detailOverlay");
     if (!overlay) return;
@@ -155,9 +213,10 @@ export function createHistoryView({
     const visibleHistory = getVisibleHistory(filteredHistory);
     updateHistoryFooter(filteredHistory, visibleHistory);
     updateShowMoreButton(filteredHistory);
+    updateSelectionControls(visibleHistory);
 
     if (!visibleHistory.length) {
-      tableBody.innerHTML = `<tr><td colspan="7" class="muted">No scan records found for the selected filters.</td></tr>`;
+      tableBody.innerHTML = `<tr><td colspan="${enableBulkSelection && selectionMode ? 8 : 7}" class="muted">No scan records found for the selected filters.</td></tr>`;
       return;
     }
 
@@ -174,6 +233,11 @@ export function createHistoryView({
 
     tableBody.innerHTML = visibleHistory.map((record, index) => `
       <tr data-index="${index}">
+        ${enableBulkSelection && selectionMode ? `
+          <td class="history-select-cell">
+            <input type="checkbox" class="history-select-checkbox" data-select-index="${index}" ${isRecordSelected(record) ? "checked" : ""}>
+          </td>
+        ` : ""}
         <td>
           <span class="history-url-primary" title="${safeText(record.domain || record.url)}">${safeText(record.domain || record.url)}</span>
           <span class="history-url-secondary muted" title="${safeText(record.url)}">${safeText(record.url)}</span>
@@ -188,9 +252,26 @@ export function createHistoryView({
     `).join("");
 
     tableBody.querySelectorAll("tr[data-index]").forEach((row) => {
-      row.addEventListener("click", async () => {
+      row.addEventListener("click", async (event) => {
         const record = visibleHistory[Number(row.dataset.index)];
+        if (selectionMode) {
+          if (event.target.closest("button") || event.target.closest("input")) return;
+          toggleRecordSelection(record);
+          renderHistoryTable(filteredHistory);
+          return;
+        }
         await renderDetail(record);
+      });
+    });
+
+    tableBody.querySelectorAll("input[data-select-index]").forEach((checkbox) => {
+      checkbox.addEventListener("click", (event) => {
+        event.stopPropagation();
+      });
+      checkbox.addEventListener("change", () => {
+        const record = visibleHistory[Number(checkbox.dataset.selectIndex)];
+        toggleRecordSelection(record);
+        renderHistoryTable(filteredHistory);
       });
     });
 
@@ -447,6 +528,48 @@ export function createHistoryView({
     document.getElementById("showMoreBtn")?.addEventListener("click", async () => {
       if (showMorePath) {
         await openExtensionPage(showMorePath);
+      }
+    });
+    document.getElementById("toggleSelectModeBtn")?.addEventListener("click", () => {
+      setSelectionMode(!selectionMode);
+      renderHistoryTable(getFilteredHistory());
+    });
+    document.getElementById("selectAllBtn")?.addEventListener("click", () => {
+      const visibleHistory = getVisibleHistory(getFilteredHistory());
+      const visibleKeys = visibleHistory.map(getRecordKey);
+      const allSelected = visibleKeys.length > 0 && visibleKeys.every((key) => selectedRecordKeys.has(key));
+
+      if (allSelected) {
+        visibleKeys.forEach((key) => selectedRecordKeys.delete(key));
+      } else {
+        visibleKeys.forEach((key) => selectedRecordKeys.add(key));
+      }
+      renderHistoryTable(getFilteredHistory());
+    });
+    document.getElementById("deleteSelectedBtn")?.addEventListener("click", async () => {
+      const filteredHistory = getFilteredHistory();
+      const visibleHistory = getVisibleHistory(filteredHistory);
+      const selectedRecords = visibleHistory.filter((record) => isRecordSelected(record));
+      if (!selectedRecords.length) return;
+
+      const confirmed = window.confirm(`Delete ${selectedRecords.length} selected history entr${selectedRecords.length === 1 ? "y" : "ies"}?`);
+      if (!confirmed) return;
+
+      try {
+        for (const record of selectedRecords) {
+          if (
+            selectedHistoryRecord &&
+            selectedHistoryRecord.id === record.id &&
+            selectedHistoryRecord.historySource === record.historySource
+          ) {
+            closeDetailOverlay();
+          }
+          await deleteHistoryRecord(record);
+        }
+        clearSelection();
+        await refreshHistoryView();
+      } catch (error) {
+        setMessage(error.message || "Could not delete selected history entries.", true);
       }
     });
 

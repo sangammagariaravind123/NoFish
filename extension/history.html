@@ -47,7 +47,12 @@
       <div class="card summary-card history-card">
         <div class="section-header">
           <h3>History Filters</h3>
-          <button id="clearHistoryBtn" class="btn ghost">Clear All</button>
+          <div class="inline">
+            <button id="deleteSelectedBtn" class="btn danger" style="display:none;">Delete Selected</button>
+            <button id="selectAllBtn" class="btn secondary" style="display:none;">Select All</button>
+            <button id="toggleSelectModeBtn" class="btn ghost">Select</button>
+            <button id="clearHistoryBtn" class="btn ghost">Clear All</button>
+          </div>
         </div>
         <div class="filters">
           <div class="field">
@@ -76,6 +81,7 @@
           <table class="history-table">
             <thead>
               <tr>
+                <th class="history-select-col" id="historySelectHeader" style="display:none;">Select</th>
                 <th class="history-url-col">URL</th>
                 <th class="history-level-col">Level</th>
                 <th class="history-source-col">Source</th>
