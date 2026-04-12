@@ -8,3 +8,5 @@ sandbox/results_mass.json
 api/venv
 node_modules/
 api/__pycache__
+api/shot.png
+api/__pycache__/main.cpython-312.pyc
