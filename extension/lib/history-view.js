@@ -1,4 +1,5 @@
 import { buildExplanation, highlightSuspiciousUrl } from "./explain.js";
+import { SHAP_EXPLAIN_URL } from "./constants.js";
 import {
   buildInsights,
   buildTrendBuckets,
@@ -20,10 +21,14 @@ import {
 export function createHistoryView({
   limit = null,
   setMessage = () => {},
-  showMorePath = null
+  showMorePath = null,
+  enableBulkSelection = false
 } = {}) {
   let historyRecords = [];
   let selectedHistoryRecord = null;
+  let detailRequestId = 0;
+  let selectionMode = false;
+  let selectedRecordKeys = new Set();
 
   function withTimeout(promise, milliseconds, label) {
     return Promise.race([
@@ -127,6 +132,61 @@ export function createHistoryView({
     button.style.display = Number.isInteger(limit) && filteredHistory.length > limit ? "inline-flex" : "inline-flex";
   }
 
+  function getRecordKey(record) {
+    return `${record.historySource || "local"}|${record.id || ""}|${record.url || ""}|${record.timestamp || ""}`;
+  }
+
+  function clearSelection() {
+    selectedRecordKeys = new Set();
+  }
+
+  function isRecordSelected(record) {
+    return selectedRecordKeys.has(getRecordKey(record));
+  }
+
+  function toggleRecordSelection(record) {
+    const key = getRecordKey(record);
+    if (selectedRecordKeys.has(key)) {
+      selectedRecordKeys.delete(key);
+    } else {
+      selectedRecordKeys.add(key);
+    }
+  }
+
+  function setSelectionMode(active) {
+    selectionMode = active;
+    if (!active) {
+      clearSelection();
+    }
+  }
+
+  function updateSelectionControls(visibleHistory) {
+    if (!enableBulkSelection) return;
+
+    const selectButton = document.getElementById("toggleSelectModeBtn");
+    const selectAllButton = document.getElementById("selectAllBtn");
+    const deleteSelectedButton = document.getElementById("deleteSelectedBtn");
+    const selectHeader = document.getElementById("historySelectHeader");
+
+    if (selectButton) {
+      selectButton.classList.toggle("active", selectionMode);
+    }
+
+    if (selectHeader) {
+      selectHeader.style.display = selectionMode ? "" : "none";
+    }
+
+    if (!selectAllButton || !deleteSelectedButton) return;
+
+    selectAllButton.style.display = selectionMode ? "inline-flex" : "none";
+    deleteSelectedButton.style.display = selectionMode ? "inline-flex" : "none";
+
+    const selectableKeys = visibleHistory.map(getRecordKey);
+    const allSelected = selectableKeys.length > 0 && selectableKeys.every((key) => selectedRecordKeys.has(key));
+    selectAllButton.textContent = allSelected ? "Deselect All" : "Select All";
+    deleteSelectedButton.disabled = selectedRecordKeys.size === 0;
+  }
+
   function openDetailOverlay() {
     const overlay = document.getElementById("detailOverlay");
     if (!overlay) return;
@@ -153,18 +213,36 @@ export function createHistoryView({
     const visibleHistory = getVisibleHistory(filteredHistory);
     updateHistoryFooter(filteredHistory, visibleHistory);
     updateShowMoreButton(filteredHistory);
+    updateSelectionControls(visibleHistory);
 
     if (!visibleHistory.length) {
-      tableBody.innerHTML = `<tr><td colspan="6" class="muted">No scan records found for the selected filters.</td></tr>`;
+      tableBody.innerHTML = `<tr><td colspan="${enableBulkSelection && selectionMode ? 8 : 7}" class="muted">No scan records found for the selected filters.</td></tr>`;
       return;
     }
 
+    const levelLabel = (record) => {
+      if (
+        record.scanType === "deep" ||
+        record.l3Risk ||
+        record.sandboxScore !== null && record.sandboxScore !== undefined
+      ) {
+        return "L3";
+      }
+      return "L1+L2";
+    };
+
     tableBody.innerHTML = visibleHistory.map((record, index) => `
       <tr data-index="${index}">
+        ${enableBulkSelection && selectionMode ? `
+          <td class="history-select-cell">
+            <input type="checkbox" class="history-select-checkbox" data-select-index="${index}" ${isRecordSelected(record) ? "checked" : ""}>
+          </td>
+        ` : ""}
         <td>
           <span class="history-url-primary" title="${safeText(record.domain || record.url)}">${safeText(record.domain || record.url)}</span>
           <span class="history-url-secondary muted" title="${safeText(record.url)}">${safeText(record.url)}</span>
         </td>
+        <td>${safeText(levelLabel(record))}</td>
         <td>${safeText(record.sourceLabel || "Local")}</td>
         <td>${formatRiskPercent(record.riskScore)}</td>
         <td><span class="pill ${classificationClass(record.classification)}">${safeText(record.classification)}</span></td>
@@ -174,9 +252,26 @@ export function createHistoryView({
     `).join("");
 
     tableBody.querySelectorAll("tr[data-index]").forEach((row) => {
-      row.addEventListener("click", async () => {
+      row.addEventListener("click", async (event) => {
         const record = visibleHistory[Number(row.dataset.index)];
+        if (selectionMode) {
+          if (event.target.closest("button") || event.target.closest("input")) return;
+          toggleRecordSelection(record);
+          renderHistoryTable(filteredHistory);
+          return;
+        }
         await renderDetail(record);
+      });
+    });
+
+    tableBody.querySelectorAll("input[data-select-index]").forEach((checkbox) => {
+      checkbox.addEventListener("click", (event) => {
+        event.stopPropagation();
+      });
+      checkbox.addEventListener("change", () => {
+        const record = visibleHistory[Number(checkbox.dataset.selectIndex)];
+        toggleRecordSelection(record);
+        renderHistoryTable(filteredHistory);
       });
     });
 
@@ -270,6 +365,7 @@ export function createHistoryView({
   }
 
   async function renderDetail(record) {
+    const currentRequestId = ++detailRequestId;
     selectedHistoryRecord = record;
     const detailPanel = document.getElementById("detailPanel");
     if (!detailPanel) return;
@@ -320,9 +416,59 @@ export function createHistoryView({
           <strong>Raw analysis log</strong>
           <pre class="code-block">${safeText(JSON.stringify(rawResult || record, null, 2))}</pre>
         </div>
+        <div class="detail-box">
+          <strong>SHAP Explainability Graph</strong>
+          <div id="shapGraphContainer" class="muted">Generating SHAP explanation graph...</div>
+        </div>
       </div>
     `;
     openDetailOverlay();
+
+    try {
+      const response = await fetch(SHAP_EXPLAIN_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: record.url })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || "SHAP explanation request failed.");
+      }
+
+      const shapResult = await response.json();
+      if (currentRequestId !== detailRequestId || selectedHistoryRecord?.url !== record.url) {
+        return;
+      }
+
+      const shapContainer = document.getElementById("shapGraphContainer");
+      if (!shapContainer) return;
+
+      shapContainer.innerHTML = `
+        <div class="stack">
+          <img class="shap-graph-image" src="${safeText(shapResult.graph_data_uri)}" alt="SHAP feature contribution graph for ${safeText(record.url)}">
+          <div class="muted">Orange bars push the URL toward phishing. Blue bars push it toward safe.</div>
+          <div class="shap-feature-list">
+            ${(shapResult.top_features || []).map((item) => `
+              <div class="shap-feature-row">
+                <span class="shap-feature-name">${safeText(item.feature)}</span>
+                <span class="shap-feature-value">${Number(item.shap_value || 0).toFixed(4)}</span>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    } catch (error) {
+      if (currentRequestId !== detailRequestId || selectedHistoryRecord?.url !== record.url) {
+        return;
+      }
+
+      const shapContainer = document.getElementById("shapGraphContainer");
+      if (shapContainer) {
+        shapContainer.textContent = "SHAP graph could not be generated for this URL.";
+      }
+      console.warn("SHAP graph load failed:", error);
+    }
   }
 
   async function refreshHistoryView() {
@@ -382,6 +528,48 @@ export function createHistoryView({
     document.getElementById("showMoreBtn")?.addEventListener("click", async () => {
       if (showMorePath) {
         await openExtensionPage(showMorePath);
+      }
+    });
+    document.getElementById("toggleSelectModeBtn")?.addEventListener("click", () => {
+      setSelectionMode(!selectionMode);
+      renderHistoryTable(getFilteredHistory());
+    });
+    document.getElementById("selectAllBtn")?.addEventListener("click", () => {
+      const visibleHistory = getVisibleHistory(getFilteredHistory());
+      const visibleKeys = visibleHistory.map(getRecordKey);
+      const allSelected = visibleKeys.length > 0 && visibleKeys.every((key) => selectedRecordKeys.has(key));
+
+      if (allSelected) {
+        visibleKeys.forEach((key) => selectedRecordKeys.delete(key));
+      } else {
+        visibleKeys.forEach((key) => selectedRecordKeys.add(key));
+      }
+      renderHistoryTable(getFilteredHistory());
+    });
+    document.getElementById("deleteSelectedBtn")?.addEventListener("click", async () => {
+      const filteredHistory = getFilteredHistory();
+      const visibleHistory = getVisibleHistory(filteredHistory);
+      const selectedRecords = visibleHistory.filter((record) => isRecordSelected(record));
+      if (!selectedRecords.length) return;
+
+      const confirmed = window.confirm(`Delete ${selectedRecords.length} selected history entr${selectedRecords.length === 1 ? "y" : "ies"}?`);
+      if (!confirmed) return;
+
+      try {
+        for (const record of selectedRecords) {
+          if (
+            selectedHistoryRecord &&
+            selectedHistoryRecord.id === record.id &&
+            selectedHistoryRecord.historySource === record.historySource
+          ) {
+            closeDetailOverlay();
+          }
+          await deleteHistoryRecord(record);
+        }
+        clearSelection();
+        await refreshHistoryView();
+      } catch (error) {
+        setMessage(error.message || "Could not delete selected history entries.", true);
       }
     });
 

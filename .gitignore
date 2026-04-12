@@ -9,3 +9,4 @@ api/venv
 node_modules/
 api/__pycache__/
 __pycache__/
+api/shot.png

@@ -42,7 +42,7 @@ def compute_rule_score(url):
 # ==========================================================
 # === Numeric Feature Extractor ============================
 # ==========================================================
-def extract_basic_features(url):
+def extract_features(url):
     u = str(url)
     return {
         "length_url": len(u),
@@ -57,7 +57,7 @@ def extract_basic_features(url):
 # ==========================================================
 def predict_url_simple(url):
     emb  = minilm_model.encode([url], show_progress_bar=False)
-    feat = np.array(list(extract_basic_features(url).values())).reshape(1,-1)
+    feat = np.array(list(extract_features(url).values())).reshape(1,-1)
     pad  = np.zeros((1, scaler.mean_.shape[0]-feat.shape[1]))
     num_scaled = np.hstack([feat, pad])
     X_hybrid = np.hstack([emb, num_scaled])
