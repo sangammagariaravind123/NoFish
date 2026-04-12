@@ -207,6 +207,10 @@ table {
   width: 90px;
 }
 
+.history-level-col {
+  width: 90px;
+}
+
 .history-class-col {
   width: 130px;
 }
@@ -406,4 +410,39 @@ tbody tr:hover {
   border-radius: 999px;
   background: #edf2f7;
   font-size: 12px;
+}
+
+.shap-graph-image {
+  width: 100%;
+  max-width: 100%;
+  border-radius: 12px;
+  border: 1px solid #dbe4f0;
+  background: #ffffff;
+}
+
+.shap-feature-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shap-feature-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  font-size: 13px;
+}
+
+.shap-feature-name {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.shap-feature-value {
+  font-family: Consolas, monospace;
+  color: #475569;
 }

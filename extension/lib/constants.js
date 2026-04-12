@@ -1,6 +1,7 @@
 export const FAST_API_BASE = "http://localhost:8000";
 export const PREDICT_URL = `${FAST_API_BASE}/predict`;
 export const DEEP_SCAN_URL = `${FAST_API_BASE}/deep_scan`;
+export const SHAP_EXPLAIN_URL = `${FAST_API_BASE}/explain_shap`;
 export const TEMP_ALLOW_MINUTES = 10;
 export const MAX_LOCAL_HISTORY = 250;
 

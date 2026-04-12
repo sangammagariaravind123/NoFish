@@ -1,4 +1,5 @@
 import { buildExplanation, highlightSuspiciousUrl } from "./explain.js";
+import { SHAP_EXPLAIN_URL } from "./constants.js";
 import {
   buildInsights,
   buildTrendBuckets,
@@ -24,6 +25,7 @@ export function createHistoryView({
 } = {}) {
   let historyRecords = [];
   let selectedHistoryRecord = null;
+  let detailRequestId = 0;
 
   function withTimeout(promise, milliseconds, label) {
     return Promise.race([
@@ -155,9 +157,20 @@ export function createHistoryView({
     updateShowMoreButton(filteredHistory);
 
     if (!visibleHistory.length) {
-      tableBody.innerHTML = `<tr><td colspan="6" class="muted">No scan records found for the selected filters.</td></tr>`;
+      tableBody.innerHTML = `<tr><td colspan="7" class="muted">No scan records found for the selected filters.</td></tr>`;
       return;
     }
+
+    const levelLabel = (record) => {
+      if (
+        record.scanType === "deep" ||
+        record.l3Risk ||
+        record.sandboxScore !== null && record.sandboxScore !== undefined
+      ) {
+        return "L3";
+      }
+      return "L1+L2";
+    };
 
     tableBody.innerHTML = visibleHistory.map((record, index) => `
       <tr data-index="${index}">
@@ -165,6 +178,7 @@ export function createHistoryView({
           <span class="history-url-primary" title="${safeText(record.domain || record.url)}">${safeText(record.domain || record.url)}</span>
           <span class="history-url-secondary muted" title="${safeText(record.url)}">${safeText(record.url)}</span>
         </td>
+        <td>${safeText(levelLabel(record))}</td>
         <td>${safeText(record.sourceLabel || "Local")}</td>
         <td>${formatRiskPercent(record.riskScore)}</td>
         <td><span class="pill ${classificationClass(record.classification)}">${safeText(record.classification)}</span></td>
@@ -270,6 +284,7 @@ export function createHistoryView({
   }
 
   async function renderDetail(record) {
+    const currentRequestId = ++detailRequestId;
     selectedHistoryRecord = record;
     const detailPanel = document.getElementById("detailPanel");
     if (!detailPanel) return;
@@ -320,9 +335,59 @@ export function createHistoryView({
           <strong>Raw analysis log</strong>
           <pre class="code-block">${safeText(JSON.stringify(rawResult || record, null, 2))}</pre>
         </div>
+        <div class="detail-box">
+          <strong>SHAP Explainability Graph</strong>
+          <div id="shapGraphContainer" class="muted">Generating SHAP explanation graph...</div>
+        </div>
       </div>
     `;
     openDetailOverlay();
+
+    try {
+      const response = await fetch(SHAP_EXPLAIN_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: record.url })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || "SHAP explanation request failed.");
+      }
+
+      const shapResult = await response.json();
+      if (currentRequestId !== detailRequestId || selectedHistoryRecord?.url !== record.url) {
+        return;
+      }
+
+      const shapContainer = document.getElementById("shapGraphContainer");
+      if (!shapContainer) return;
+
+      shapContainer.innerHTML = `
+        <div class="stack">
+          <img class="shap-graph-image" src="${safeText(shapResult.graph_data_uri)}" alt="SHAP feature contribution graph for ${safeText(record.url)}">
+          <div class="muted">Orange bars push the URL toward phishing. Blue bars push it toward safe.</div>
+          <div class="shap-feature-list">
+            ${(shapResult.top_features || []).map((item) => `
+              <div class="shap-feature-row">
+                <span class="shap-feature-name">${safeText(item.feature)}</span>
+                <span class="shap-feature-value">${Number(item.shap_value || 0).toFixed(4)}</span>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    } catch (error) {
+      if (currentRequestId !== detailRequestId || selectedHistoryRecord?.url !== record.url) {
+        return;
+      }
+
+      const shapContainer = document.getElementById("shapGraphContainer");
+      if (shapContainer) {
+        shapContainer.textContent = "SHAP graph could not be generated for this URL.";
+      }
+      console.warn("SHAP graph load failed:", error);
+    }
   }
 
   async function refreshHistoryView() {
