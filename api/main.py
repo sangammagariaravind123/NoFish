@@ -3,8 +3,9 @@ import asyncio
 import base64
 import io
 import os
-import sys
 import re
+import sys
+
 import joblib
 import matplotlib
 import numpy as np
@@ -65,18 +66,15 @@ def resolve_minilm_source() -> tuple[str, bool]:
     return "all-MiniLM-L6-v2", False
 
 
-# --- Load the trained models ---
 rf_model = joblib.load(project_path("api", "rf_hybrid_minilm.pkl"))
 scaler = joblib.load(project_path("api", "scaler_hybrid.pkl"))
 behavioral_model = BehavioralPredictor(project_path("api", "behavior_transformer.pt"))
 rf_model.n_jobs = 1
 rf_tree_explainer = shap.TreeExplainer(rf_model)
 
-# --- Load the MiniLM model ---
 minilm_source, use_local_only = resolve_minilm_source()
 minilm_model = SentenceTransformer(minilm_source, local_files_only=use_local_only)
 
-# --- Rule engine (same as in your app) ---
 SUSPICIOUS_TLDS = [
     "tk",
     "ml",
@@ -93,7 +91,7 @@ SUSPICIOUS_TLDS = [
     "nz",
 ]
 PHISHING_KEYWORDS = [
-    "KYC",
+    "kyc",
     "login",
     "verify",
     "update",
@@ -116,10 +114,12 @@ URL_SHORTENERS = [
 ]
 
 
-def compute_rule_score(url):
+def compute_rule_score(url: str):
     score = 0
     rules = []
     ext = extract_domain_parts(url)
+    normalized_url = url.lower()
+
     if ext.suffix in SUSPICIOUS_TLDS:
         score += 1
         rules.append("Suspicious_TLD")
@@ -129,34 +129,24 @@ def compute_rule_score(url):
     if url.count(".") > 4:
         score += 1
         rules.append("Excess_subdomains")
-    if any(k in url.lower() for k in PHISHING_KEYWORDS):
+    if any(keyword in normalized_url for keyword in PHISHING_KEYWORDS):
         score += 1
         rules.append("Keyword_match")
-    if any(short in url.lower() for short in URL_SHORTENERS):
+    if any(shortener in normalized_url for shortener in URL_SHORTENERS):
         score += 1
         rules.append("Shortener")
-    if re.search(r"\d", domain_parts.domain):
+    if re.search(r"\d", ext.domain or ""):
         score += 1
         rules.append("digits_in_domain")
+
     return score / 6, rules
 
 
-# def extract_features(url):
-#     u = str(url)
-#     return {
-#         "length_url": len(u),
-#         "nb_dots": u.count("."),
-#         "nb_hyphens": u.count("-"),
-#         "https_token": 1 if "https" in u.lower() else 0,
-#         "ratio_digits_url": sum(c.isdigit() for c in u) / len(u) if len(u) > 0 else 0,
-#     }
-
-
-def predict_url(url):
+def build_hybrid_features(url: str) -> tuple[np.ndarray, dict]:
     emb = minilm_model.encode([url], show_progress_bar=False)
-    global domain_parts
-    extract, domain_parts = extract_features(url)
-    feat = np.array(list(extract.values()), dtype=np.float32).reshape(1, -1)
+    feature_map, _domain_parts = extract_features(url)
+    feat = np.array(list(feature_map.values()), dtype=np.float32).reshape(1, -1)
+
     numeric_feature_count = int(getattr(scaler, "n_features_in_", len(scaler.mean_)))
     if feat.shape[1] > numeric_feature_count:
         feat = feat[:, :numeric_feature_count]
@@ -167,8 +157,11 @@ def predict_url(url):
         numeric_features = numeric_features[:, :numeric_feature_count]
 
     num_scaled = scaler.transform(numeric_features)
-    X_hybrid = np.hstack([emb, num_scaled])
+    return np.hstack([emb, num_scaled]), feature_map
 
+
+def predict_url(url: str):
+    X_hybrid, _feature_map = build_hybrid_features(url)
     prob = rf_model.predict_proba(X_hybrid)[0][1]
     rule_score, rules = compute_rule_score(url)
 
@@ -189,23 +182,6 @@ def predict_url(url):
         "rule_score": rule_score,
         "triggered_rules": rules,
     }
-
-
-def build_hybrid_features(url: str):
-    emb = minilm_model.encode([url], show_progress_bar=False)
-    feature_map = extract_features(url)
-    feat = np.array(list(feature_map.values()), dtype=np.float32).reshape(1, -1)
-    numeric_feature_count = int(getattr(scaler, "n_features_in_", len(scaler.mean_)))
-    if feat.shape[1] > numeric_feature_count:
-        feat = feat[:, :numeric_feature_count]
-
-    pad = np.zeros((1, max(0, numeric_feature_count - feat.shape[1])), dtype=np.float32)
-    numeric_features = np.hstack([feat, pad])
-    if numeric_features.shape[1] > numeric_feature_count:
-        numeric_features = numeric_features[:, :numeric_feature_count]
-
-    num_scaled = scaler.transform(numeric_features)
-    return np.hstack([emb, num_scaled]), feature_map
 
 
 def unwrap_positive_class_shap(shap_values) -> np.ndarray:
@@ -379,6 +355,3 @@ async def root():
     return {
         "message": "PhishGuard API is running. Use POST /predict with JSON { 'url': '...' }"
     }
-
-
-predict("https://www.faceb00k.com/")

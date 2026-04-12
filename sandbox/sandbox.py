@@ -1,15 +1,10 @@
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 from urllib.parse import urlparse
-<<<<<<< HEAD
-import re
-import json
-=======
 import os
 import re
 import json
 import tempfile
->>>>>>> 452c45a0dbcd912ee93bdb2a0b606502a899242d
 
 SUSPICIOUS_TLDS = [".xyz", ".top", ".tk", ".ml", ".ga", ".cf", ".gq"]
 REALISTIC_USER_AGENT = (
@@ -49,11 +44,8 @@ def analyze_url(url):
         "final_url_differs": 0,
         "error_flag": 0,
         "timeout_flag": 0,
-<<<<<<< HEAD
-=======
         "page_title": "",
         "html_length": 0,
->>>>>>> 452c45a0dbcd912ee93bdb2a0b606502a899242d
 
         # request types
         "document_requests": 0,
@@ -149,17 +141,6 @@ def analyze_url(url):
             page.goto(url, wait_until="domcontentloaded")
 
             # wait for dynamic content
-<<<<<<< HEAD
-            page.wait_for_timeout(5000)   # 5 seconds (important)
-
-            # optional: wait until network settles
-            try:
-                page.wait_for_load_state("networkidle", timeout=5000)
-            except:
-                pass
-            page.screenshot(path="shot.png")
-            result["final_url"] = page.url
-=======
             page.wait_for_timeout(POST_LOAD_WAIT_MS)
 
             # optional: wait until network settles
@@ -176,7 +157,6 @@ def analyze_url(url):
             result["final_url"] = page.url
             result["page_title"] = page.title() or ""
             result["html_length"] = len(page.content() or "")
->>>>>>> 452c45a0dbcd912ee93bdb2a0b606502a899242d
 
             if result["final_url"] and result["final_url"] != url:
                 result["final_url_differs"] = 1
@@ -187,10 +167,7 @@ def analyze_url(url):
 
             if "Timeout" in str(e) or "timeout" in str(e):
                 result["timeout_flag"] = 1
-<<<<<<< HEAD
-=======
                 result["skipped_due_to_timeout"] = True
->>>>>>> 452c45a0dbcd912ee93bdb2a0b606502a899242d
 
         browser.close()
 
