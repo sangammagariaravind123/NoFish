@@ -298,6 +298,29 @@ async def deep_scan(request: URLRequest):
             "other_requests": sandbox_result.get("other_requests", 0),
         }
 
+        if not sandbox_result.get("sandbox_accessible", True):
+            blocked_reason = sandbox_result.get(
+                "sandbox_blocked_reason",
+                "Sandbox could not access the real site content",
+            )
+            explanation = "Sandbox could not access the real site content."
+
+            return {
+                "scanned_url": request.url,
+                "final_risk": "Unknown",
+                "final_trust_index": None,
+                "l1l2": l1l2_result,
+                "sandbox": {
+                    "behavioral_prob": None,
+                    "behavioral_features": behavioral_features,
+                    "raw_output": sandbox_result,
+                    "model_type": "transformer",
+                    "sandbox_accessible": False,
+                    "blocked_reason": blocked_reason,
+                },
+                "explanation": explanation,
+            }
+
         behavioral_prob = float(behavioral_model.predict_proba(behavioral_features)[0])
 
         if behavioral_prob > 0.6:
@@ -320,6 +343,8 @@ async def deep_scan(request: URLRequest):
                 "behavioral_features": behavioral_features,
                 "raw_output": sandbox_result,
                 "model_type": "transformer",
+                "sandbox_accessible": True,
+                "blocked_reason": None,
             },
             "explanation": explanation,
         }
