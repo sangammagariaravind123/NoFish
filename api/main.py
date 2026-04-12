@@ -93,6 +93,8 @@ SUSPICIOUS_TLDS = [
     "nz",
 ]
 PHISHING_KEYWORDS = [
+    "apk",
+    "exe",
     "kyc",
     "login",
     "verify",
@@ -129,7 +131,7 @@ def compute_rule_score(url: str):
     if "@" in url:
         score += 1
         rules.append("@_symbol")
-    if url.count(".") > 4:
+    if url.count(".") > 3:
         score += 1
         rules.append("Excess_subdomains")
     if any(keyword in normalized_url for keyword in PHISHING_KEYWORDS):
@@ -139,7 +141,7 @@ def compute_rule_score(url: str):
         hostname == shortener or hostname.endswith(f".{shortener}")
         for shortener in URL_SHORTENERS
     ):
-        score += 2
+        score += 3
         rules.append("Shortener")
     if re.search(r"\d", ext.domain or ""):
         score += 1
@@ -172,7 +174,7 @@ def predict_url(url: str):
     rule_score, rules = compute_rule_score(url)
     rule_count = len(rules)
 
-    risk_score = 0.65 * prob + 0.35 * rule_score
+    risk_score = 0.6 * prob + 0.4 * rule_score
     trust_index = 1 - risk_score
     trust_index = max(0.0, min(1.0, trust_index))
 
