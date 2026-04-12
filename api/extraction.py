@@ -43,7 +43,15 @@ PHISHING_KEYWORDS = {
     "signin",
     "confirm",
 }
-SUSPICIOUS_QUERY_PARAMS = {"redirect", "url", "link", "dest", "return", "next", "forward"}
+SUSPICIOUS_QUERY_PARAMS = {
+    "redirect",
+    "url",
+    "link",
+    "dest",
+    "return",
+    "next",
+    "forward",
+}
 TRUSTED_BRANDS = {"google", "facebook", "amazon"}
 
 
@@ -124,7 +132,9 @@ def extract_features(url):
     features["ratio_digits_url"] = digits_count / len(full_url) if full_url else 0.0
     features["ratio_digits_host"] = digits_host / len(hostname) if hostname else 0.0
     features["ratio_special_chars"] = (
-        sum(not char.isalnum() for char in full_url) / len(full_url) if full_url else 0.0
+        sum(not char.isalnum() for char in full_url) / len(full_url)
+        if full_url
+        else 0.0
     )
     features["ratio_vowels"] = (
         sum(char in "aeiou" for char in full_url) / len(full_url) if full_url else 0.0
@@ -160,12 +170,16 @@ def extract_features(url):
 
     features["query_length"] = len(query)
     features["nb_query_params"] = len(query.split("&")) if query else 0
-    features["suspicious_query"] = 1 if any(param in query for param in SUSPICIOUS_QUERY_PARAMS) else 0
+    features["suspicious_query"] = (
+        1 if any(param in query for param in SUSPICIOUS_QUERY_PARAMS) else 0
+    )
     features["encoded_query"] = 1 if "%" in query else 0
     features["query_eq_count"] = query.count("=")
     features["query_and_count"] = query.count("&")
     features["email_in_query"] = 1 if re.search(r"[\w\.-]+@[\w\.-]+", query) else 0
-    features["ip_in_query"] = 1 if re.search(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", query) else 0
+    features["ip_in_query"] = (
+        1 if re.search(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", query) else 0
+    )
     digits_query = sum(char.isdigit() for char in query)
     features["query_digits_ratio"] = digits_query / len(query) if query else 0.0
     features["query_entropy"] = _entropy(query)
@@ -173,11 +187,17 @@ def extract_features(url):
     features["https_token"] = 1 if parsed.scheme == "https" else 0
     features["http_token"] = 1 if parsed.scheme == "http" else 0
     features["suspicious_tld"] = 1 if suffix in SUSPICIOUS_TLDS else 0
-    features["shortening_service"] = 1 if any(shortener in full_url for shortener in URL_SHORTENERS) else 0
-    features["phish_hints"] = 1 if any(keyword in full_url for keyword in PHISHING_KEYWORDS) else 0
+    features["shortening_service"] = (
+        1 if any(shortener in full_url for shortener in URL_SHORTENERS) else 0
+    )
+    features["phish_hints"] = (
+        1 if any(keyword in full_url for keyword in PHISHING_KEYWORDS) else 0
+    )
     features["google_index"] = 0
     features["page_rank"] = (
-        5 if any(brand in domain for brand in TRUSTED_BRANDS) else 2 if "." in hostname and len(hostname) > 10 else 1
+        5
+        if any(brand in domain for brand in TRUSTED_BRANDS)
+        else 2 if "." in hostname and len(hostname) > 10 else 1
     )
     features["nb_hyperlinks"] = 0
     features["domain_in_title"] = 0
@@ -186,7 +206,9 @@ def extract_features(url):
 
     words = re.findall(r"[a-zA-Z]+", full_url)
     features["word_count"] = len(words)
-    features["avg_word_length"] = sum(len(word) for word in words) / len(words) if words else 0.0
+    features["avg_word_length"] = (
+        sum(len(word) for word in words) / len(words) if words else 0.0
+    )
     features["max_word_length"] = max((len(word) for word in words), default=0)
     features["min_word_length"] = min((len(word) for word in words), default=0)
     features["unique_chars"] = len(set(full_url))
@@ -196,21 +218,25 @@ def extract_features(url):
     else:
         features["char_repetition"] = 0.0
     digit_sequences = re.findall(r"\d+", full_url)
-    features["max_consecutive_digits"] = max((len(seq) for seq in digit_sequences), default=0)
+    features["max_consecutive_digits"] = max(
+        (len(seq) for seq in digit_sequences), default=0
+    )
     consonant_sequences = re.findall(r"[bcdfghjklmnpqrstvwxyz]+", full_url)
     features["max_consecutive_consonants"] = max(
         (len(seq) for seq in consonant_sequences), default=0
     )
     features["url_entropy"] = _entropy(full_url)
     features["nb_redirection"] = (
-        full_url.count("//") - 1 if full_url.startswith("http") else full_url.count("//")
+        full_url.count("//") - 1
+        if full_url.startswith("http")
+        else full_url.count("//")
     )
     suspicious_patterns = [r"\.\w+\.", r"-\w+-", r"\d{4,}", r"[a-z]{20,}"]
     features["suspicious_pattern_score"] = sum(
         1 for pattern in suspicious_patterns if re.search(pattern, full_url)
     )
 
-    return features
+    return features, domain_parts
 
 
 def extract_all_features(url):

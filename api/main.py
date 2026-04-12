@@ -16,7 +16,7 @@ from extraction import extract_features, extract_domain_parts
 # from behavioral_transformer import BehavioralPredictor
 from extraction import extract_all_features
 
-
+domain_parts = None
 API_DIR = os.path.dirname(__file__)
 PROJECT_ROOT = os.path.dirname(API_DIR)
 if PROJECT_ROOT not in sys.path:
@@ -145,9 +145,9 @@ def compute_rule_score(url):
 
 def predict_url(url):
     emb = minilm_model.encode([url], show_progress_bar=False)
-    feat = np.array(list(extract_features(url).values()), dtype=np.float32).reshape(
-        1, -1
-    )
+    global domain_parts
+    extract, domain_parts = extract_features(url)
+    feat = np.array(list(extract.values()), dtype=np.float32).reshape(1, -1)
     numeric_feature_count = int(getattr(scaler, "n_features_in_", len(scaler.mean_)))
     if feat.shape[1] > numeric_feature_count:
         feat = feat[:, :numeric_feature_count]
@@ -196,6 +196,9 @@ async def predict(request: URLRequest):
     try:
         return predict_url(request.url)
     except Exception as e:
+        import traceback
+
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -269,3 +272,6 @@ async def root():
     return {
         "message": "PhishGuard API is running. Use POST /predict with JSON { 'url': '...' }"
     }
+
+
+predict("https://www.faceb00k.com/")
