@@ -165,7 +165,7 @@ def predict_url(url: str):
     prob = rf_model.predict_proba(X_hybrid)[0][1]
     rule_score, rules = compute_rule_score(url)
 
-    trust_index = 0.7 * prob + 0.3 * (1 - rule_score)
+    trust_index = 0.6 * prob + 0.4 * (1 - rule_score)
     trust_index = max(0.0, min(1.0, trust_index))
 
     if trust_index >= 0.6:
