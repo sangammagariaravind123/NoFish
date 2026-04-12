@@ -5,6 +5,7 @@ import io
 import os
 import re
 import sys
+from urllib.parse import urlparse
 
 import joblib
 import matplotlib
@@ -116,6 +117,7 @@ def compute_rule_score(url: str):
     rules = []
     ext = extract_domain_parts(url)
     normalized_url = url.lower()
+    hostname = (urlparse(url).hostname or "").lower().lstrip("www.")
 
     if ext.suffix in SUSPICIOUS_TLDS:
         score += 1
@@ -129,7 +131,7 @@ def compute_rule_score(url: str):
     if any(keyword in normalized_url for keyword in PHISHING_KEYWORDS):
         score += 1
         rules.append("Keyword_match")
-    if any(shortener in normalized_url for shortener in URL_SHORTENERS):
+    if any(hostname == shortener or hostname.endswith(f".{shortener}") for shortener in URL_SHORTENERS):
         score += 1
         rules.append("Shortener")
     if re.search(r"\d", ext.domain or ""):
@@ -161,16 +163,24 @@ def predict_url(url: str):
     X_hybrid, _feature_map = build_hybrid_features(url)
     prob = rf_model.predict_proba(X_hybrid)[0][1]
     rule_score, rules = compute_rule_score(url)
+    rule_count = len(rules)
 
-    trust_index = 0.7 * prob + 0.3 * (1 - rule_score)
+    risk_score = 0.65 * prob + 0.35 * rule_score
+    trust_index = 1 - risk_score
     trust_index = max(0.0, min(1.0, trust_index))
 
-    if trust_index >= 0.6:
-        risk = "Safe"
-    elif trust_index >= 0.4:
+    if rule_count >= 3:
+        risk = "Phishing"
+    elif rule_count >= 2 and prob >= 0.65:
+        risk = "Phishing"
+    elif rule_count >= 1:
+        risk = "Phishing" if risk_score >= 0.72 else "Suspicious"
+    elif prob >= 0.78:
+        risk = "Phishing"
+    elif risk_score >= 0.48:
         risk = "Suspicious"
     else:
-        risk = "Phishing"
+        risk = "Safe"
 
     return {
         "trust_index": trust_index,
