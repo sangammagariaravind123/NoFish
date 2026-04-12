@@ -52,9 +52,6 @@ SUSPICIOUS_QUERY_PARAMS = {
     "next",
     "forward",
 }
-<<<<<<< HEAD:api/extract_features.py
-TRUSTED_BRANDS = {"google", "facebook", "amazon"}
-=======
 TRUSTED_BRANDS = {
     "google",
     "facebook",
@@ -77,7 +74,6 @@ TRUSTED_BRANDS = {
     "zoom",
     "stripe",
 }
->>>>>>> 43d41b7 (v6.4.5 added rule):api/extraction.py
 
 
 def extract_domain_parts(url: str):
