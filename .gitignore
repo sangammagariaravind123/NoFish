@@ -10,3 +10,6 @@ node_modules/
 api/__pycache__/
 __pycache__/
 api/shot.png
+api/__pycache__/main.cpython-311.pyc
+api/__pycache__/sandbox.cpython-311.pyc
+sandbox/shot.png
