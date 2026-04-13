@@ -3,17 +3,14 @@ import asyncio
 import base64
 import io
 import os
-import re
 import sys
-from urllib.parse import urlparse
-
+import re
 import joblib
 import matplotlib
 import numpy as np
 import pandas as pd
 import shap
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 
@@ -68,15 +65,18 @@ def resolve_minilm_source() -> tuple[str, bool]:
     return "all-MiniLM-L6-v2", False
 
 
+# --- Load the trained models ---
 rf_model = joblib.load(project_path("api", "rf_hybrid_minilm.pkl"))
 scaler = joblib.load(project_path("api", "scaler_hybrid.pkl"))
 behavioral_model = BehavioralPredictor(project_path("api", "behavior_transformer.pt"))
 rf_model.n_jobs = 1
 rf_tree_explainer = shap.TreeExplainer(rf_model)
 
+# --- Load the MiniLM model ---
 minilm_source, use_local_only = resolve_minilm_source()
 minilm_model = SentenceTransformer(minilm_source, local_files_only=use_local_only)
 
+# --- Rule engine (same as in your app) ---
 SUSPICIOUS_TLDS = [
     "tk",
     "ml",
@@ -93,9 +93,7 @@ SUSPICIOUS_TLDS = [
     "nz",
 ]
 PHISHING_KEYWORDS = [
-    "apk",
-    "exe",
-    "kyc",
+    "KYC",
     "login",
     "verify",
     "update",
@@ -118,39 +116,43 @@ URL_SHORTENERS = [
 ]
 
 
-def compute_rule_score(url: str):
+def compute_rule_score(url):
     score = 0
     rules = []
     ext = extract_domain_parts(url)
-    normalized_url = url.lower()
-    hostname = (urlparse(url).hostname or "").lower().lstrip("www.")
-
     if ext.suffix in SUSPICIOUS_TLDS:
         score += 1
         rules.append("Suspicious_TLD")
     if "@" in url:
         score += 1
         rules.append("@_symbol")
-    if url.count(".") > 3:
+    if url.count(".") > 4:
         score += 1
         rules.append("Excess_subdomains")
-    if any(keyword in normalized_url for keyword in PHISHING_KEYWORDS):
+    if any(k in url.lower() for k in PHISHING_KEYWORDS):
         score += 1
         rules.append("Keyword_match")
-    if any(
-        hostname == shortener or hostname.endswith(f".{shortener}")
-        for shortener in URL_SHORTENERS
-    ):
-        score += 3
+    if any(short in url.lower() for short in URL_SHORTENERS):
+        score += 1
         rules.append("Shortener")
-    if re.search(r"\d", ext.domain or ""):
+    if re.search(r"\d", domain_parts.domain):
         score += 1
         rules.append("digits_in_domain")
-
     return score / 6, rules
 
 
-def build_hybrid_features(url: str) -> tuple[np.ndarray, dict]:
+# def extract_features(url):
+#     u = str(url)
+#     return {
+#         "length_url": len(u),
+#         "nb_dots": u.count("."),
+#         "nb_hyphens": u.count("-"),
+#         "https_token": 1 if "https" in u.lower() else 0,
+#         "ratio_digits_url": sum(c.isdigit() for c in u) / len(u) if len(u) > 0 else 0,
+#     }
+
+
+def predict_url(url):
     emb = minilm_model.encode([url], show_progress_bar=False)
     global domain_parts
     extract, domain_parts = extract_features(url)
@@ -165,31 +167,20 @@ def build_hybrid_features(url: str) -> tuple[np.ndarray, dict]:
         numeric_features = numeric_features[:, :numeric_feature_count]
 
     num_scaled = scaler.transform(numeric_features)
-    return np.hstack([emb, num_scaled]), feature_map
+    X_hybrid = np.hstack([emb, num_scaled])
 
-
-def predict_url(url: str):
-    X_hybrid, _feature_map = build_hybrid_features(url)
     prob = rf_model.predict_proba(X_hybrid)[0][1]
     rule_score, rules = compute_rule_score(url)
-    rule_count = len(rules)
 
-    risk_score = 0.6 * prob + 0.4 * rule_score
-    trust_index = 1 - risk_score
+    trust_index = 0.7 * prob + 0.3 * (1 - rule_score)
     trust_index = max(0.0, min(1.0, trust_index))
 
-    if rule_count >= 3:
-        risk = "Phishing"
-    elif rule_count >= 2 and prob >= 0.65:
-        risk = "Phishing"
-    elif rule_count >= 1:
-        risk = "Phishing" if risk_score >= 0.72 else "Suspicious"
-    elif prob >= 0.78:
-        risk = "Phishing"
-    elif risk_score >= 0.48:
+    if trust_index >= 0.6:
+        risk = "Safe"
+    elif trust_index >= 0.4:
         risk = "Suspicious"
     else:
-        risk = "Safe"
+        risk = "Phishing"
 
     return {
         "trust_index": trust_index,
@@ -198,6 +189,23 @@ def predict_url(url: str):
         "rule_score": rule_score,
         "triggered_rules": rules,
     }
+
+
+def build_hybrid_features(url: str):
+    emb = minilm_model.encode([url], show_progress_bar=False)
+    feature_map = extract_features(url)
+    feat = np.array(list(feature_map.values()), dtype=np.float32).reshape(1, -1)
+    numeric_feature_count = int(getattr(scaler, "n_features_in_", len(scaler.mean_)))
+    if feat.shape[1] > numeric_feature_count:
+        feat = feat[:, :numeric_feature_count]
+
+    pad = np.zeros((1, max(0, numeric_feature_count - feat.shape[1])), dtype=np.float32)
+    numeric_features = np.hstack([feat, pad])
+    if numeric_features.shape[1] > numeric_feature_count:
+        numeric_features = numeric_features[:, :numeric_feature_count]
+
+    num_scaled = scaler.transform(numeric_features)
+    return np.hstack([emb, num_scaled]), feature_map
 
 
 def unwrap_positive_class_shap(shap_values) -> np.ndarray:
@@ -325,29 +333,6 @@ async def deep_scan(request: URLRequest):
             "other_requests": sandbox_result.get("other_requests", 0),
         }
 
-        if not sandbox_result.get("sandbox_accessible", True):
-            blocked_reason = sandbox_result.get(
-                "sandbox_blocked_reason",
-                "Sandbox could not access the real site content",
-            )
-            explanation = "Sandbox could not access the real site content."
-
-            return {
-                "scanned_url": request.url,
-                "final_risk": "Unknown",
-                "final_trust_index": None,
-                "l1l2": l1l2_result,
-                "sandbox": {
-                    "behavioral_prob": None,
-                    "behavioral_features": behavioral_features,
-                    "raw_output": sandbox_result,
-                    "model_type": "transformer",
-                    "sandbox_accessible": False,
-                    "blocked_reason": blocked_reason,
-                },
-                "explanation": explanation,
-            }
-
         behavioral_prob = float(behavioral_model.predict_proba(behavioral_features)[0])
 
         if behavioral_prob > 0.6:
@@ -370,8 +355,6 @@ async def deep_scan(request: URLRequest):
                 "behavioral_features": behavioral_features,
                 "raw_output": sandbox_result,
                 "model_type": "transformer",
-                "sandbox_accessible": True,
-                "blocked_reason": None,
             },
             "explanation": explanation,
         }
@@ -398,9 +381,4 @@ async def root():
     }
 
 
-@app.get("/sandbox_shot")
-async def sandbox_shot():
-    screenshot_path = project_path("api", "shot.png")
-    if not os.path.exists(screenshot_path):
-        raise HTTPException(status_code=404, detail="Sandbox screenshot not found")
-    return FileResponse(screenshot_path, media_type="image/png")
+predict("https://www.faceb00k.com/")
