@@ -152,9 +152,9 @@ def compute_rule_score(url: str):
 
 def build_hybrid_features(url: str) -> tuple[np.ndarray, dict]:
     emb = minilm_model.encode([url], show_progress_bar=False)
-    feature_map, _domain_parts = extract_features(url)
-    feat = np.array(list(feature_map.values()), dtype=np.float32).reshape(1, -1)
-
+    global domain_parts
+    extract, domain_parts = extract_features(url)
+    feat = np.array(list(extract.values()), dtype=np.float32).reshape(1, -1)
     numeric_feature_count = int(getattr(scaler, "n_features_in_", len(scaler.mean_)))
     if feat.shape[1] > numeric_feature_count:
         feat = feat[:, :numeric_feature_count]
