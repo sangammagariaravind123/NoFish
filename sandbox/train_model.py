@@ -1,11 +1,6 @@
 import os
 import sys
 
-<<<<<<< HEAD
-import numpy as np
-import torch
-from sklearn.metrics import accuracy_score, classification_report, roc_auc_score
-=======
 import joblib
 import numpy as np
 import pandas as pd
@@ -19,7 +14,6 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
->>>>>>> 452c45a0dbcd912ee93bdb2a0b606502a899242d
 from sklearn.model_selection import train_test_split
 from torch import nn
 
@@ -29,18 +23,11 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from behavioral_transformer import (
-<<<<<<< HEAD
-    BehavioralTransformer,
-    BehavioralTransformerConfig,
-    build_dataloader,
-    load_behavioral_dataset,
-=======
     FEATURE_COLUMNS,
     BehavioralTransformer,
     BehavioralTransformerConfig,
     build_dataloader,
     preprocess_behavioral_features,
->>>>>>> 452c45a0dbcd912ee93bdb2a0b606502a899242d
     save_behavioral_artifact,
 )
 
@@ -50,20 +37,14 @@ ARTIFACT_PATHS = [
     os.path.join(CURRENT_DIR, "behavior_transformer.pt"),
     os.path.join(PROJECT_ROOT, "api", "behavior_transformer.pt"),
 ]
-<<<<<<< HEAD
-=======
 RF_ARTIFACT_PATH = os.path.join(CURRENT_DIR, "model_rf.pkl")
->>>>>>> 452c45a0dbcd912ee93bdb2a0b606502a899242d
 
 EPOCHS = 30
 BATCH_SIZE = 64
 LEARNING_RATE = 8e-4
 WEIGHT_DECAY = 5e-4
 RANDOM_STATE = 42
-<<<<<<< HEAD
-=======
 USE_LOW_QUALITY = False
->>>>>>> 452c45a0dbcd912ee93bdb2a0b606502a899242d
 
 
 def standardize(
@@ -76,8 +57,6 @@ def standardize(
     return (train_array - mean) / std, (eval_array - mean) / std, mean, std
 
 
-<<<<<<< HEAD
-=======
 def evaluate_binary(y_true: np.ndarray, y_prob: np.ndarray, threshold: float = 0.5) -> dict:
     y_pred = (y_prob >= threshold).astype(int)
     return {
@@ -124,7 +103,6 @@ def load_training_frame(dataset_path: str, use_low_quality: bool) -> pd.DataFram
     return df
 
 
->>>>>>> 452c45a0dbcd912ee93bdb2a0b606502a899242d
 def train_epoch(model, dataloader, loss_fn, optimizer, device):
     model.train()
     total_loss = 0.0
@@ -144,11 +122,7 @@ def train_epoch(model, dataloader, loss_fn, optimizer, device):
     return total_loss / len(dataloader.dataset)
 
 
-<<<<<<< HEAD
-def evaluate(model, dataloader, device):
-=======
 def evaluate_transformer(model, dataloader, device):
->>>>>>> 452c45a0dbcd912ee93bdb2a0b606502a899242d
     model.eval()
     probabilities = []
     labels = []
@@ -163,21 +137,6 @@ def evaluate_transformer(model, dataloader, device):
 
     y_prob = np.concatenate(probabilities)
     y_true = np.concatenate(labels).astype(int)
-<<<<<<< HEAD
-    y_pred = (y_prob >= 0.5).astype(int)
-
-    return {
-        "accuracy": accuracy_score(y_true, y_pred),
-        "roc_auc": roc_auc_score(y_true, y_prob),
-        "report": classification_report(y_true, y_pred, digits=4),
-        "y_prob": y_prob,
-        "y_true": y_true,
-    }
-
-
-def main():
-    features, labels = load_behavioral_dataset(DATASET_PATH)
-=======
     metrics = evaluate_binary(y_true, y_prob)
     metrics["y_prob"] = y_prob
     metrics["y_true"] = y_true
@@ -189,7 +148,6 @@ def main():
     features = preprocess_behavioral_features(df[FEATURE_COLUMNS].astype("float32"))
     labels = df["label"].astype("int64")
 
->>>>>>> 452c45a0dbcd912ee93bdb2a0b606502a899242d
     X_train_val, X_test, y_train_val, y_test = train_test_split(
         features.to_numpy(),
         labels.to_numpy(),
@@ -226,11 +184,7 @@ def main():
     best_state = None
     best_val_auc = -1.0
 
-<<<<<<< HEAD
-    print(f"Training behavioral Transformer on {len(features)} samples")
-=======
     print(f"\nTraining behavioral Transformer on {len(features)} samples")
->>>>>>> 452c45a0dbcd912ee93bdb2a0b606502a899242d
     print(
         f"Train size: {len(X_train)} | Val size: {len(X_val)} | "
         f"Test size: {len(X_test)} | Device: {device}"
@@ -238,11 +192,7 @@ def main():
 
     for epoch in range(1, EPOCHS + 1):
         train_loss = train_epoch(model, train_loader, loss_fn, optimizer, device)
-<<<<<<< HEAD
-        val_metrics = evaluate(model, val_loader, device)
-=======
         val_metrics = evaluate_transformer(model, val_loader, device)
->>>>>>> 452c45a0dbcd912ee93bdb2a0b606502a899242d
 
         if val_metrics["roc_auc"] > best_val_auc:
             best_val_auc = val_metrics["roc_auc"]
@@ -258,29 +208,15 @@ def main():
     if best_state is not None:
         model.load_state_dict(best_state)
 
-<<<<<<< HEAD
-    final_metrics = evaluate(model, test_loader, device)
-    print("\nFinal test accuracy:", round(final_metrics["accuracy"], 4))
-    print("Final test ROC-AUC:", round(final_metrics["roc_auc"], 4))
-    print("\nClassification report:\n")
-    print(final_metrics["report"])
-=======
     transformer_metrics = evaluate_transformer(model, test_loader, device)
     print_metric_block("Transformer Test Metrics", transformer_metrics)
     print("\nTransformer classification report:\n")
     print(transformer_metrics["report"])
->>>>>>> 452c45a0dbcd912ee93bdb2a0b606502a899242d
 
     metadata = {
         "train_size": int(len(X_train)),
         "val_size": int(len(X_val)),
         "test_size": int(len(X_test)),
-<<<<<<< HEAD
-        "accuracy": float(final_metrics["accuracy"]),
-        "roc_auc": float(final_metrics["roc_auc"]),
-        "epochs": EPOCHS,
-        "notes": "log1p count preprocessing + CLS transformer encoder + dense residual branch",
-=======
         "accuracy": float(transformer_metrics["accuracy"]),
         "precision": float(transformer_metrics["precision"]),
         "recall": float(transformer_metrics["recall"]),
@@ -289,7 +225,6 @@ def main():
         "epochs": EPOCHS,
         "use_low_quality": USE_LOW_QUALITY,
         "notes": "quality-aware dataset filtering + RF baseline comparison",
->>>>>>> 452c45a0dbcd912ee93bdb2a0b606502a899242d
     }
 
     model = model.cpu()
@@ -304,8 +239,6 @@ def main():
         )
         print(f"Saved Transformer artifact -> {artifact_path}")
 
-<<<<<<< HEAD
-=======
     rf_model = RandomForestClassifier(
         n_estimators=300,
         max_depth=None,
@@ -340,7 +273,6 @@ def main():
     )
     print(f"Saved RF baseline artifact -> {RF_ARTIFACT_PATH}")
 
->>>>>>> 452c45a0dbcd912ee93bdb2a0b606502a899242d
 
 if __name__ == "__main__":
     main()

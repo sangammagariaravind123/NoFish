@@ -20,14 +20,11 @@ from extraction import extract_features, extract_domain_parts
 # from behavioral_transformer import BehavioralPredictor
 from extraction import extract_all_features
 
-<<<<<<< HEAD
 domain_parts = None
-=======
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 
 
->>>>>>> 61eca3aca77ba8666bb8fc8ea865dedb4ddbc01c
 API_DIR = os.path.dirname(__file__)
 PROJECT_ROOT = os.path.dirname(API_DIR)
 if PROJECT_ROOT not in sys.path:
@@ -157,24 +154,9 @@ def compute_rule_score(url):
 
 def predict_url(url):
     emb = minilm_model.encode([url], show_progress_bar=False)
-<<<<<<< HEAD
-
-    feat = np.array(
-        list(extract_basic_features(url).values()), dtype=np.float32
-    ).reshape(1, -1)
-
-    global domain_parts
-    extract, domain_parts = extract_features(url)
-
-    feat = np.array(list(extract_features(url).values()), dtype=np.float32).reshape(
-        1, -1
-    )
-
-=======
     global domain_parts
     extract, domain_parts = extract_features(url)
     feat = np.array(list(extract.values()), dtype=np.float32).reshape(1, -1)
->>>>>>> sandbox-upgrade
     numeric_feature_count = int(getattr(scaler, "n_features_in_", len(scaler.mean_)))
     if feat.shape[1] > numeric_feature_count:
         feat = feat[:, :numeric_feature_count]
@@ -241,13 +223,23 @@ def unwrap_positive_class_shap(shap_values) -> np.ndarray:
 
 def build_shap_graph(url: str) -> dict:
     hybrid_features, feature_map = build_hybrid_features(url)
-    shap_values = unwrap_positive_class_shap(rf_tree_explainer.shap_values(hybrid_features))
+    shap_values = unwrap_positive_class_shap(
+        rf_tree_explainer.shap_values(hybrid_features)
+    )
 
     embedding_size = hybrid_features.shape[1] - len(feature_map)
-    embedding_contribution = float(np.sum(shap_values[:embedding_size])) if embedding_size > 0 else 0.0
+    embedding_contribution = (
+        float(np.sum(shap_values[:embedding_size])) if embedding_size > 0 else 0.0
+    )
 
     labels = ["MiniLM semantic signal", *feature_map.keys()]
-    contributions = np.array([embedding_contribution, *shap_values[embedding_size: embedding_size + len(feature_map)]], dtype=np.float64)
+    contributions = np.array(
+        [
+            embedding_contribution,
+            *shap_values[embedding_size : embedding_size + len(feature_map)],
+        ],
+        dtype=np.float64,
+    )
     feature_values = [None, *feature_map.values()]
 
     top_indices = np.argsort(np.abs(contributions))[-12:]
