@@ -13,3 +13,5 @@ api/shot.png
 api/__pycache__/main.cpython-311.pyc
 api/__pycache__/sandbox.cpython-311.pyc
 sandbox/shot.png
+api/__pycache__/
+api/__pycache__/main.cpython-312.pyc
