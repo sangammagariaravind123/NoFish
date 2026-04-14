@@ -416,6 +416,72 @@ async function getUrlForDeepScan() {
   return currentUrl;
 }
 
+async function renderLatestScanForCurrentTab() {
+  const currentUrl = await getUrlForDeepScan();
+  const data = await getLocal(["deepScanResult", "lastResult"]);
+  const lastResultRecord = normalizePopupResultRecord(data.lastResult);
+
+  if (!currentUrl) {
+    document.getElementById("result").innerHTML = "<p>Unable to get current tab URL.</p>";
+    return;
+  }
+
+  if (shouldUseDeepResult(currentUrl, data.deepScanResult, lastResultRecord)) {
+    await displayResult(data.deepScanResult.result, true);
+    return;
+  }
+
+  if (
+    lastResultRecord &&
+    lastResultRecord.url === currentUrl &&
+    lastResultRecord.scanMode !== "deep" &&
+    lastResultRecord.result
+  ) {
+    await displayResult(lastResultRecord.result, false);
+    return;
+  }
+
+  document.getElementById("result").innerHTML = "<p>No recent scan.</p>";
+}
+
+async function refreshCurrentScan() {
+  const loadingDiv = document.getElementById("loading");
+  const deepScanBtn = document.getElementById("deepScanBtn");
+  const refreshBtn = document.getElementById("refreshScanBtn");
+  const whyBtn = document.getElementById("whyBtn");
+  const explanationBox = document.getElementById("explanationBox");
+
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const activeTab = tabs[0];
+
+  if (!activeTab?.id) {
+    document.getElementById("result").innerHTML = "<p>Could not find the active tab.</p>";
+    return;
+  }
+
+  loadingDiv.textContent = "Scanning in progress...";
+  loadingDiv.style.display = "block";
+  deepScanBtn.disabled = true;
+  refreshBtn.disabled = true;
+  whyBtn.style.display = "none";
+  explanationBox.style.display = "none";
+  document.getElementById("result").innerHTML = "<p>Scanning in progress...</p>";
+
+  try {
+    await chrome.tabs.reload(activeTab.id);
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    await renderLatestScanForCurrentTab();
+  } catch (error) {
+    console.error("Refresh scan failed:", error);
+    document.getElementById("result").innerHTML = `<p>Refresh scan failed.<br>${safeText(error.message || "Unknown error")}</p>`;
+  } finally {
+    loadingDiv.textContent = "Analyzing in sandbox... please wait ~10 seconds";
+    loadingDiv.style.display = "none";
+    deepScanBtn.disabled = false;
+    refreshBtn.disabled = false;
+  }
+}
+
 async function runDeepScan() {
   const loadingDiv = document.getElementById("loading");
   const btn = document.getElementById("deepScanBtn");
@@ -476,27 +542,10 @@ async function runDeepScan() {
 async function initializePopup() {
   await restoreSessionContext().catch((error) => console.warn("Popup session restore skipped:", error));
   await renderAuthState();
-
-  const currentUrl = await getUrlForDeepScan();
-  const data = await getLocal(["deepScanResult", "lastResult"]);
-  const lastResultRecord = normalizePopupResultRecord(data.lastResult);
-
-  if (!currentUrl) {
-    document.getElementById("result").innerHTML = "<p>Unable to get current tab URL.</p>";
-  } else if (shouldUseDeepResult(currentUrl, data.deepScanResult, lastResultRecord)) {
-    await displayResult(data.deepScanResult.result, true);
-  } else if (
-    lastResultRecord &&
-    lastResultRecord.url === currentUrl &&
-    lastResultRecord.scanMode !== "deep" &&
-    lastResultRecord.result
-  ) {
-    await displayResult(lastResultRecord.result, false);
-  } else {
-    document.getElementById("result").innerHTML = "<p>No recent scan.</p>";
-  }
+  await renderLatestScanForCurrentTab();
 
   document.getElementById("deepScanBtn").addEventListener("click", runDeepScan);
+  document.getElementById("refreshScanBtn").addEventListener("click", refreshCurrentScan);
   document.getElementById("whyBtn").addEventListener("click", toggleExplanation);
   document.getElementById("explainModeBtn").addEventListener("click", toggleExplainMode);
   document.getElementById("backToResultBtn").addEventListener("click", hideSandboxScreenshot);
