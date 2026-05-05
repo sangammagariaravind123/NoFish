@@ -5,12 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 from tqdm import tqdm
 
-<<<<<<< HEAD
-# test first
-df = df.head(4000)
-=======
 from sandbox import analyze_url
->>>>>>> 452c45a0dbcd912ee93bdb2a0b606502a899242d
 
 
 CURRENT_DIR = os.path.dirname(__file__)
